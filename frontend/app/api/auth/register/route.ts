@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { registerUser, createToken } from "@/lib/auth"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 export async function POST(request: Request) {
   try {
@@ -20,41 +21,43 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await registerUser(email, password, fullName, requestTeacher)
+    // Call backend API
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        full_name: fullName,
+        request_teacher: requestTeacher,
+      }),
+    })
 
-    if (!result.success) {
+    const data = await response.json()
+
+    if (!response.ok) {
       return NextResponse.json(
-        { error: result.error },
-        { status: 400 }
+        { error: data.error || "Error en el registro" },
+        { status: response.status }
       )
     }
 
-    // Create token and set cookie
-    const token = await createToken({
-      userId: result.user!.id,
-      email: result.user!.email,
-      role: result.user!.role,
-      fullName: result.user!.full_name,
-    })
-
+    // Set auth token in cookie
     const cookieStore = await cookies()
-    cookieStore.set("auth-token", token, {
+    cookieStore.set("auth-token", data.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
     })
 
     return NextResponse.json({
       success: true,
-      user: {
-        id: result.user!.id,
-        email: result.user!.email,
-        fullName: result.user!.full_name,
-        role: result.user!.role,
-      },
-      teacherRequestPending: requestTeacher,
+      user: data.user,
+      teacherRequestPending: data.teacher_request_pending,
     })
   } catch (error) {
     console.error("Register API error:", error)

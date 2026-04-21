@@ -7,14 +7,14 @@ import { MongoClient, Db } from "mongodb"
 // Environment variables needed:
 // - POSTGRES_HOST (default: localhost)
 // - POSTGRES_PORT (default: 5432)
-// - POSTGRES_DB (default: codekids)
-// - POSTGRES_USER (default: postgres)
-// - POSTGRES_PASSWORD (required)
+// - POSTGRES_DB (default: robolearn)
+  - POSTGRES_USER (default: postgres)
+  - POSTGRES_PASSWORD (required)
 
 const pgPool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",
   port: parseInt(process.env.POSTGRES_PORT || "5432"),
-  database: process.env.POSTGRES_DB || "codekids",
+  database: process.env.POSTGRES_DB || "robolearn",
   user: process.env.POSTGRES_USER || "postgres",
   password: process.env.POSTGRES_PASSWORD,
   max: 20,
@@ -52,7 +52,7 @@ export async function execute(text: string, params?: unknown[]): Promise<number>
 // ============================================
 // Environment variables needed:
 // - MONGODB_URI (default: mongodb://localhost:27017)
-// - MONGODB_DB (default: codekids_metrics)
+// - MONGODB_DB (default: robolearn_metrics)
 
 let mongoClient: MongoClient | null = null
 let mongoDb: Db | null = null
@@ -61,7 +61,7 @@ export async function getMongoDb(): Promise<Db> {
   if (mongoDb) return mongoDb
 
   const uri = process.env.MONGODB_URI || "mongodb://localhost:27017"
-  const dbName = process.env.MONGODB_DB || "codekids_metrics"
+  const dbName = process.env.MONGODB_DB || "robolearn_metrics"
 
   mongoClient = new MongoClient(uri)
   await mongoClient.connect()

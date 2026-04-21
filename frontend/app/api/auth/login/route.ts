@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { loginUser } from "@/lib/auth"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 export async function POST(request: Request) {
   try {
@@ -13,18 +14,30 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await loginUser(email, password)
+    // Call backend API
+    const response = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    })
 
-    if (!result.success) {
+    const data = await response.json()
+
+    if (!response.ok) {
       return NextResponse.json(
-        { error: result.error },
-        { status: 401 }
+        { error: data.error || "Credenciales inválidas" },
+        { status: response.status }
       )
     }
 
     // Set HTTP-only cookie
     const cookieStore = await cookies()
-    cookieStore.set("auth-token", result.token!, {
+    cookieStore.set("auth-token", data.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -34,14 +47,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      user: {
-        id: result.user!.id,
-        email: result.user!.email,
-        fullName: result.user!.full_name,
-        role: result.user!.role,
-        points: result.user!.points,
-        streakDays: result.user!.streak_days,
-      },
+      user: data.user,
     })
   } catch (error) {
     console.error("Login API error:", error)

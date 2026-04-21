@@ -1,21 +1,107 @@
 version: "3.9"
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: robolearn_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: robolearn_password
+      POSTGRES_DB: robolearn
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/001-create-tables.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./scripts/002-seed-data.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - robolearn_network
+
+  # MongoDB Database
+  mongo:
+    image: mongo:7.0
+    container_name: robolearn_mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: robolearn_password
+      MONGO_INITDB_DATABASE: robolearn_metrics
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/003-mongodb-init.js:/docker-entrypoint-initdb.d/init-db.js
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - robolearn_network
+
+  # FastAPI Backend
   backend:
-    build: ./backend
-    container_name: hex_backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: robolearn_backend
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: robolearn_password
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: robolearn
+      MONGODB_URL: mongodb://mongo:27017
+      MONGODB_DB: robolearn_metrics
+      SECRET_KEY: your-secret-key-change-in-production-robolearn
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 10080
+      CORS_ORIGINS: '["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]'
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
     volumes:
       - ./backend:/app
     restart: always
+    networks:
+      - robolearn_network
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # Next.js Frontend
   frontend:
-    build: ./frontend
-    container_name: hex_frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: robolearn_frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+      NEXT_PUBLIC_BACKEND_URL: http://backend:8000
     ports:
-      - "5173:5173"
+      - "3000:3000"
+    depends_on:
+      - backend
     volumes:
       - ./frontend:/app
-    stdin_open: true
-    tty: true
+      - /app/node_modules
+    restart: always
+    networks:
+      - robolearn_network
+
+volumes:
+  postgres_data:
+  mongo_data:
+
+networks:
+  robolearn_network:
+    driver: bridge
