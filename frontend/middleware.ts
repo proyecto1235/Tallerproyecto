@@ -6,13 +6,13 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "your-secret-key-change-in-production"
 )
 
-const publicPaths = ["/", "/login", "/register", "/api/auth/login", "/api/auth/register"]
+const publicPaths = ["/", "/login", "/register"]
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Allow public paths
-  if (publicPaths.some(path => pathname === path || pathname.startsWith("/api/auth/"))) {
+  if (publicPaths.some(path => pathname === path)) {
     // If user is logged in and tries to access login/register, redirect to dashboard
     if (pathname === "/login" || pathname === "/register") {
       const token = request.cookies.get("auth-token")?.value

@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react"
 import Link from "next/link"
+import { InteractiveExercise } from "@/components/interactive/InteractiveExercise"
 
 interface StudentDashboardProps {
   user: User
@@ -76,7 +77,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
 
       {/* Stats cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
               <BookOpen className="h-6 w-6 text-primary" />
@@ -89,7 +90,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
               <CheckCircle className="h-6 w-6 text-accent" />
@@ -100,7 +101,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-yellow-500/10">
               <Trophy className="h-6 w-6 text-yellow-500" />
@@ -111,7 +112,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-500/10">
               <Target className="h-6 w-6 text-blue-500" />
@@ -124,11 +125,20 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
         </Card>
       </div>
 
+      {/* Interactive Code Editor Demo */}
+      <div className="py-4">
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+          <Zap className="h-5 w-5 text-primary" />
+          Desafío Rápido: ¡Haz saltar al robot!
+        </h2>
+        <InteractiveExercise />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main progress */}
         <div className="lg:col-span-2 space-y-6">
           {/* Current progress card */}
-          <Card>
+          <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="h-5 w-5 text-primary" />
@@ -160,7 +170,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
           </Card>
 
           {/* Weekly challenge */}
-          <Card className="border-primary/20 bg-primary/5">
+          <Card className="neo-shadow-primary border-primary bg-primary/10 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-primary" />
@@ -201,7 +211,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
         {/* Sidebar content */}
         <div className="space-y-6">
           {/* Recommendations */}
-          <Card>
+          <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
             <CardHeader>
               <CardTitle className="text-base">Recomendaciones</CardTitle>
             </CardHeader>
@@ -240,7 +250,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
           </Card>
 
           {/* Recent achievements */}
-          <Card>
+          <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
             <CardHeader>
               <CardTitle className="text-base">Logros Recientes</CardTitle>
             </CardHeader>

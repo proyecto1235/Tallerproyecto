@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi import FastAPI, Depends, HTTPException, status, Response, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -11,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import settings
+from config.database_init import initialize_database
 from infrastructure.adapters.output.postgres.connection import PostgresConnection
 from infrastructure.adapters.output.postgres.user_repository_impl import UserRepositoryImpl
 from infrastructure.adapters.output.postgres.module_repository_impl import ModuleRepositoryImpl
@@ -59,6 +61,10 @@ class ChatRequest(BaseModel):
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting Robolearn API...")
+    
+    # Initialize database (create if needed, migrate tables, seed data)
+    initialize_database()
+    
     PostgresConnection.init_pool()
     
     yield
@@ -81,10 +87,11 @@ app = FastAPI(
 # ============================================
 # CORS Middleware
 # ============================================
+# origins = 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,11 +113,29 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
-async def verify_token(credentials: HTTPAuthCredentials) -> TokenData:
-    """Verify JWT token"""
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"GLOBAL ERROR: {type(exc).__name__}: {exc}")
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"message": f"Internal Server Error: {str(exc)}", "type": type(exc).__name__},
+    )
+
+async def verify_token(request: Request) -> TokenData:
+    """Verify JWT token from cookies"""
+    token = request.cookies.get("auth-token")
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
     try:
         payload = jwt.decode(
-            credentials.credentials,
+            token,
             settings.secret_key,
             algorithms=[settings.algorithm]
         )
@@ -134,6 +159,24 @@ async def verify_token(credentials: HTTPAuthCredentials) -> TokenData:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
+
+async def verify_teacher(token_data: TokenData = Depends(verify_token)) -> TokenData:
+    """Verify user is a teacher or admin"""
+    if token_data.role not in [UserRole.TEACHER.value, UserRole.ADMIN.value]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires teacher privileges"
+        )
+    return token_data
+
+async def verify_admin(token_data: TokenData = Depends(verify_token)) -> TokenData:
+    """Verify user is an admin"""
+    if token_data.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires admin privileges"
+        )
+    return token_data
 
 # ============================================
 # Initialize Repositories
@@ -163,7 +206,7 @@ async def health():
 # ============================================
 
 @app.post("/api/auth/register", tags=["Auth"])
-async def register(request: RegisterRequest):
+async def register(request: RegisterRequest, response: Response):
     """Register a new user"""
     use_case = RegisterUserUseCase(user_repository)
     result = await use_case.execute(
@@ -184,53 +227,85 @@ async def register(request: RegisterRequest):
         "role": user["role"]
     })
     
+    # Set HTTP-only cookie
+    response.set_cookie(
+        key="auth-token",
+        value=token,
+        httponly=True,
+        secure=settings.node_env == "production",
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,  # 7 days
+    )
+    
     return {
         "success": True,
         "user": user,
-        "token": token,
         "teacher_request_pending": result.get("teacher_request_pending", False)
     }
 
 @app.post("/api/auth/login", tags=["Auth"])
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, response: Response):
     """Login user"""
+    print(f"DEBUG: Login attempt for {request.email}")
+
     user = await user_repository.get_by_email(request.email)
-    
     if not user:
+        print(f"DEBUG: User not found")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not pwd_context.verify(request.password, user.password_hash):
+
+    print(f"DEBUG: Found user, verifying password...")
+    try:
+        is_valid = pwd_context.verify(request.password[:72], user.password_hash)
+    except Exception as e:
+        print(f"DEBUG: bcrypt error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Password verification error: {e}")
+
+    if not is_valid:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is not active")
-    
+
     token = create_access_token({
         "user_id": user.id,
         "email": user.email,
         "role": user.role.value
     })
-    
-    await event_repository.log_event(
-        "user_login",
-        user.id,
-        {"email": user.email}
+
+    response.set_cookie(
+        key="auth-token",
+        value=token,
+        httponly=True,
+        secure=settings.node_env == "production",
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
     )
-    
+
+    # Log event to MongoDB (non-critical, don't crash on failure)
+    try:
+        await event_repository.log_event("user_login", user.id, {"email": user.email})
+    except Exception as e:
+        print(f"DEBUG: MongoDB log failed (non-critical): {e}")
+
+    print(f"DEBUG: Login successful for {user.email}")
     return {
         "success": True,
         "user": {
             "id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "role": user.role.value
-        },
-        "token": token
+            "role": user.role.value,
+            "points": getattr(user, "points", 0),
+            "streak_days": getattr(user, "streakDays", 0),
+        }
     }
 
 @app.post("/api/auth/logout", tags=["Auth"])
-async def logout(token_data: TokenData = Depends(verify_token)):
+async def logout(response: Response, token_data: TokenData = Depends(verify_token)):
     """Logout user"""
+    # Delete the cookie
+    response.delete_cookie(key="auth-token")
+    
     await event_repository.log_event(
         "user_logout",
         token_data.user_id,
@@ -387,15 +462,47 @@ async def get_user_history(token_data: TokenData = Depends(verify_token)):
     return {"success": True, "history": history}
 
 # ============================================
+# Routes - Teacher
+# ============================================
+
+@app.get("/api/teacher/dashboard", tags=["Teacher"])
+async def get_teacher_dashboard(token_data: TokenData = Depends(verify_teacher)):
+    """Get teacher dashboard metrics"""
+    return {
+        "success": True,
+        "metrics": {
+            "active_students": 15,
+            "average_score": 85,
+            "alerts": ["Student 3 is struggling with loops"]
+        }
+    }
+
+# ============================================
+# Routes - Admin
+# ============================================
+
+@app.get("/api/admin/teachers/pending", tags=["Admin"])
+async def get_pending_teachers(token_data: TokenData = Depends(verify_admin)):
+    """List users who requested to be teachers"""
+    # Dummy list for now
+    return {"success": True, "requests": []}
+
+@app.post("/api/admin/teachers/approve/{user_id}", tags=["Admin"])
+async def approve_teacher(user_id: int, token_data: TokenData = Depends(verify_admin)):
+    """Approve a teacher request"""
+    # Implementation would update role to TEACHER
+    return {"success": True, "message": f"Teacher {user_id} approved"}
+
+# ============================================
 # Error Handlers
 # ============================================
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    return {
-        "success": False,
-        "error": exc.detail
-    }
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail},
+    )
 
 if __name__ == "__main__":
     import uvicorn

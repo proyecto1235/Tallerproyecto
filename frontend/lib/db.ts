@@ -8,8 +8,8 @@ import { MongoClient, Db } from "mongodb"
 // - POSTGRES_HOST (default: localhost)
 // - POSTGRES_PORT (default: 5432)
 // - POSTGRES_DB (default: robolearn)
-  - POSTGRES_USER (default: postgres)
-  - POSTGRES_PASSWORD (required)
+  // - POSTGRES_USER (default: postgres)
+  // - POSTGRES_PASSWORD (required)
 
 const pgPool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",

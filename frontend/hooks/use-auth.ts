@@ -19,6 +19,8 @@ interface AuthState {
   isAuthenticated: boolean
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -29,13 +31,20 @@ export function useAuth() {
 
   const checkSession = useCallback(async () => {
     try {
-      const res = await fetch("/api/auth/session")
+      const res = await fetch(`${API_URL}/users/profile`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+      
       const data = await res.json()
       
       setState({
-        user: data.authenticated ? data.user : null,
+        user: res.ok ? data.user : null,
         isLoading: false,
-        isAuthenticated: data.authenticated,
+        isAuthenticated: res.ok,
       })
     } catch {
       setState({
@@ -51,9 +60,10 @@ export function useAuth() {
   }, [checkSession])
 
   const login = async (email: string, password: string) => {
-    const res = await fetch("/api/auth/login", {
+    const res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email, password }),
     })
     
@@ -79,10 +89,11 @@ export function useAuth() {
     fullName: string,
     requestTeacher: boolean = false
   ) => {
-    const res = await fetch("/api/auth/register", {
+    const res = await fetch(`${API_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, fullName, requestTeacher }),
+      credentials: "include",
+      body: JSON.stringify({ email, password, full_name: fullName, request_teacher: requestTeacher }),
     })
     
     const data = await res.json()
@@ -102,7 +113,10 @@ export function useAuth() {
   }
 
   const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" })
+    await fetch(`${API_URL}/auth/logout`, { 
+      method: "POST",
+      credentials: "include",
+    })
     setState({
       user: null,
       isLoading: false,

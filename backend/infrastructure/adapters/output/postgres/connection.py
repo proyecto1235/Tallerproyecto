@@ -18,7 +18,8 @@ class PostgresConnection:
                 20,
                 host=settings.postgres_host,
                 port=settings.postgres_port,
-                database=settings.postgres_db,
+                dbname=settings.postgres_db,
+                # database=settings.postgres_db,
                 user=settings.postgres_user,
                 password=settings.postgres_password,
             )
