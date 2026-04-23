@@ -7,6 +7,7 @@ class ContentStatus(str, Enum):
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
     REJECTED = "rejected"
+    PENDING_DELETION = "pending_deletion"
 
 class Module:
     def __init__(

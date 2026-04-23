@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS modules (
     is_published BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT valid_status CHECK (status IN ('draft', 'pending_review', 'approved', 'rejected'))
+    CONSTRAINT valid_status CHECK (status IN ('draft', 'pending_review', 'approved', 'rejected', 'pending_deletion'))
 );
 
 CREATE INDEX idx_modules_teacher_id ON modules(teacher_id);

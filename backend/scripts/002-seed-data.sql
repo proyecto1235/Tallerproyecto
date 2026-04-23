@@ -241,6 +241,44 @@ AND e.title = 'Hola Mundo'
 ON CONFLICT DO NOTHING;
 
 -- ============================================
+-- Insert More Advanced Modules
+-- ============================================
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published)
+SELECT 
+    'Inteligencia Artificial Básica',
+    'Aprende los conceptos fundamentales de IA usando Python y librerías sencillas.',
+    id,
+    'approved',
+    5,
+    TRUE
+FROM users WHERE email = 'teacher@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published)
+SELECT 
+    'Machine Learning',
+    'Introducción a algoritmos de clasificación y regresión.',
+    id,
+    'pending_review',
+    6,
+    FALSE
+FROM users WHERE email = 'teacher@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO exercises (module_id, title, description, instructions, difficulty, points, "order")
+SELECT 
+    m.id,
+    'Tu primer modelo',
+    'Entrena un clasificador',
+    'Usa scikit-learn para entrenar un clasificador básico.',
+    4,
+    50,
+    1
+FROM modules m WHERE m.title = 'Inteligencia Artificial Básica'
+ON CONFLICT DO NOTHING;
+
+-- ============================================
 -- Print Summary
 -- ============================================
 

@@ -53,6 +53,18 @@ class LoginRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
 
+class ModuleCreate(BaseModel):
+    title: str
+    description: str
+    order: int = 0
+    is_published: bool = False
+
+class ModuleUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    order: Optional[int] = None
+    is_published: Optional[bool] = None
+
 # ============================================
 # Lifespan Events
 # ============================================
@@ -433,6 +445,89 @@ async def get_module(module_id: int):
     
     return {"success": True, "module": module.to_dict()}
 
+@app.post("/api/modules", tags=["Modules"])
+async def create_module(
+    request: ModuleCreate,
+    token_data: TokenData = Depends(verify_teacher)
+):
+    """Create a new module"""
+    from domain.entities.module import Module, ContentStatus
+    
+    module = Module(
+        id=None,
+        title=request.title,
+        description=request.description,
+        teacher_id=token_data.user_id,
+        status=ContentStatus.DRAFT,
+        order=request.order,
+        is_published=request.is_published
+    )
+    
+    created_module = await module_repository.create(module)
+    
+    await event_repository.log_event(
+        "module_created",
+        token_data.user_id,
+        {"module_id": created_module.id, "title": created_module.title}
+    )
+    
+    return {"success": True, "module": created_module.to_dict()}
+
+@app.put("/api/modules/{module_id}", tags=["Modules"])
+async def update_module(
+    module_id: int,
+    request: ModuleUpdate,
+    token_data: TokenData = Depends(verify_teacher)
+):
+    """Update a module"""
+    module = await module_repository.get_by_id(module_id)
+    
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+        
+    if module.teacher_id != token_data.user_id and token_data.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to edit this module")
+        
+    if request.title is not None:
+        module.title = request.title
+    if request.description is not None:
+        module.description = request.description
+    if request.order is not None:
+        module.order = request.order
+    if request.is_published is not None:
+        module.is_published = request.is_published
+        
+    updated_module = await module_repository.update(module)
+    
+    return {"success": True, "module": updated_module.to_dict()}
+
+@app.delete("/api/modules/{module_id}", tags=["Modules"])
+async def request_module_deletion(
+    module_id: int,
+    token_data: TokenData = Depends(verify_teacher)
+):
+    """Request module deletion (requires admin approval)"""
+    from domain.entities.module import ContentStatus
+    
+    module = await module_repository.get_by_id(module_id)
+    
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+        
+    if module.teacher_id != token_data.user_id and token_data.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this module")
+        
+    module.status = ContentStatus.PENDING_DELETION
+    await module_repository.update(module)
+    
+    await event_repository.log_event(
+        "module_deletion_requested",
+        token_data.user_id,
+        {"module_id": module.id}
+    )
+    
+    return {"success": True, "message": "Module deletion requested and pending admin approval"}
+
 @app.post("/api/modules/{module_id}/enroll", tags=["Modules"])
 async def enroll_module(
     module_id: int,
@@ -498,6 +593,37 @@ async def approve_teacher(user_id: int, token_data: TokenData = Depends(verify_a
     """Approve a teacher request"""
     # Implementation would update role to TEACHER
     return {"success": True, "message": f"Teacher {user_id} approved"}
+
+@app.post("/api/admin/modules/{module_id}/approve-deletion", tags=["Admin"])
+async def approve_module_deletion(module_id: int, token_data: TokenData = Depends(verify_admin)):
+    """Approve module deletion"""
+    module = await module_repository.get_by_id(module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+        
+    await module_repository.delete(module_id)
+    
+    await event_repository.log_event(
+        "module_deleted",
+        token_data.user_id,
+        {"module_id": module_id, "title": module.title}
+    )
+    
+    return {"success": True, "message": "Module deleted successfully"}
+
+@app.post("/api/admin/modules/{module_id}/reject-deletion", tags=["Admin"])
+async def reject_module_deletion(module_id: int, token_data: TokenData = Depends(verify_admin)):
+    """Reject module deletion and set back to draft/approved"""
+    from domain.entities.module import ContentStatus
+    
+    module = await module_repository.get_by_id(module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+        
+    module.status = ContentStatus.DRAFT
+    await module_repository.update(module)
+    
+    return {"success": True, "message": "Module deletion rejected, set to draft"}
 
 # ============================================
 # Error Handlers
