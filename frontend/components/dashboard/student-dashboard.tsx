@@ -59,18 +59,18 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground md:text-3xl">
-            Hola, {user.fullName.split(" ")[0]}!
+            Hola, {(user?.fullName || "Usuario").split(" ")[0]}!
           </h1>
           <p className="text-muted-foreground">Continua tu aventura de aprendizaje</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-3 py-2">
             <Star className="h-5 w-5 text-yellow-500" />
-            <span className="font-semibold text-yellow-600">{user.points} pts</span>
+            <span className="font-semibold text-yellow-600">{user?.points || 0} pts</span>
           </div>
           <div className="flex items-center gap-2 rounded-lg bg-orange-500/10 px-3 py-2">
             <Flame className="h-5 w-5 text-orange-500" />
-            <span className="font-semibold text-orange-600">{user.streakDays} dias</span>
+            <span className="font-semibold text-orange-600">{user?.streakDays || 0} dias</span>
           </div>
         </div>
       </div>

@@ -84,7 +84,7 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
           <h1 className="text-2xl font-bold text-foreground md:text-3xl">
             Panel del Docente
           </h1>
-          <p className="text-muted-foreground">Bienvenido, {user.fullName}</p>
+          <p className="text-muted-foreground">Bienvenido, {user?.fullName || "Docente"}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>

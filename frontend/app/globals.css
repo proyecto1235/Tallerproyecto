@@ -147,7 +147,7 @@
   
   .scanline {
     position: relative;
-    overflow: hidden;
+    /* overflow: scroll; */
   }
   .scanline::after {
     content: '';

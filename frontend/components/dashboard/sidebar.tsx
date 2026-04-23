@@ -64,10 +64,12 @@ export function Sidebar({ user }: SidebarProps) {
   const { logout } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  const userRole = user?.role || "student"
+
   const links =
-    user.role === "admin"
+    userRole === "admin"
       ? adminLinks
-      : user.role === "teacher"
+      : userRole === "teacher"
         ? teacherLinks
         : studentLinks
 
@@ -77,12 +79,14 @@ export function Sidebar({ user }: SidebarProps) {
     admin: "Administrador",
   }
 
-  const initials = user.fullName
+  // Generar iniciales de forma segura
+  const initials = (user?.fullName || "U")
     .split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase()
     .slice(0, 2)
+    || "U"
 
   return (
     <>
@@ -134,19 +138,19 @@ export function Sidebar({ user }: SidebarProps) {
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium">{user.fullName}</p>
-              <p className="text-xs text-sidebar-foreground/70">{roleLabels[user.role]}</p>
+              <p className="truncate text-sm font-medium">{user?.fullName || "Usuario"}</p>
+              <p className="text-xs text-sidebar-foreground/70">{user?.role ? roleLabels[user.role] : "Usuario"}</p>
             </div>
           </div>
-          {user.role === "student" && (
+          {user?.role === "student" && (
             <div className="mt-3 flex items-center gap-4 text-xs">
               <div className="flex items-center gap-1">
                 <Star className="h-3.5 w-3.5 text-yellow-500" />
-                <span>{user.points} pts</span>
+                <span>{user?.points || 0} pts</span>
               </div>
               <div className="flex items-center gap-1">
                 <Flame className="h-3.5 w-3.5 text-orange-500" />
-                <span>{user.streakDays} dias</span>
+                <span>{user?.streakDays || 0} dias</span>
               </div>
             </div>
           )}
