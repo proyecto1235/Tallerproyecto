@@ -75,7 +75,7 @@ export default function RegisterPage() {
               <Input
                 id="fullName"
                 type="text"
-                placeholder="Tu nombre"
+                placeholder="Angel Perez"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
@@ -88,7 +88,7 @@ export default function RegisterPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="tu@correo.com"
+                placeholder="example@robolearn.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -139,11 +139,10 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setRequestTeacher(false)}
-                  className={`flex flex-col items-center gap-2 rounded-lg border p-3 transition-colors ${
-                    !requestTeacher
+                  className={`flex flex-col items-center gap-2 rounded-lg border p-3 transition-colors ${!requestTeacher
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-background text-muted-foreground hover:bg-muted"
-                  }`}
+                    }`}
                 >
                   <GraduationCap className="h-6 w-6" />
                   <span className="text-sm font-medium">Estudiante</span>
@@ -151,11 +150,10 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setRequestTeacher(true)}
-                  className={`flex flex-col items-center gap-2 rounded-lg border p-3 transition-colors ${
-                    requestTeacher
+                  className={`flex flex-col items-center gap-2 rounded-lg border p-3 transition-colors ${requestTeacher
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-background text-muted-foreground hover:bg-muted"
-                  }`}
+                    }`}
                 >
                   <BookOpen className="h-6 w-6" />
                   <span className="text-sm font-medium">Docente</span>

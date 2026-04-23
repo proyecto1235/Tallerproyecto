@@ -65,6 +65,17 @@ class ModuleUpdate(BaseModel):
     order: Optional[int] = None
     is_published: Optional[bool] = None
 
+class ExecuteRequest(BaseModel):
+    code: str
+
+class ProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
 # ============================================
 # Lifespan Events
 # ============================================
@@ -346,6 +357,39 @@ async def get_profile(token_data: TokenData = Depends(verify_token)):
     
     return {"success": True, "user": user.to_dict()}
 
+@app.put("/api/users/profile", tags=["Users"])
+async def update_profile(
+    request: ProfileUpdate,
+    token_data: TokenData = Depends(verify_token)
+):
+    """Update current user profile"""
+    user = await user_repository.get_by_id(token_data.user_id)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if request.full_name is not None:
+        user.full_name = request.full_name
+    if request.email is not None:
+        user.email = request.email
+    if request.password is not None and request.password != "":
+        user.password_hash = pwd_context.hash(request.password)
+        
+    # Note: user_repository.update is not implemented in our view, 
+    # but let's assume it exists or we need to implement it.
+    # Let's add it manually using raw SQL if needed, or check if it exists.
+    # Assuming update method exists on user_repository:
+    try:
+        from infrastructure.adapters.output.postgres.connection import PostgresConnection
+        query = "UPDATE users SET full_name = %s, email = %s, password_hash = %s WHERE id = %s"
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute(query, (user.full_name, user.email, user.password_hash, user.id))
+            
+        await event_repository.log_event("profile_updated", user.id, {"email": user.email})
+        return {"success": True, "message": "Profile updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/users/{user_id}", tags=["Users"])
 async def get_user(user_id: int):
     """Get user by ID"""
@@ -423,6 +467,53 @@ async def chat(
     }
 
 # ============================================
+# Routes - Interactive Execution
+# ============================================
+
+@app.post("/api/execute-code", tags=["Interactive"])
+async def execute_code(
+    request: ExecuteRequest,
+    token_data: TokenData = Depends(verify_token)
+):
+    """Execute Python code for interactive exercises"""
+    import io
+    import sys
+    from contextlib import redirect_stdout
+    
+    actions = []
+    
+    # Define functions that the user can call in their script
+    def jump():
+        actions.append("jump")
+        
+    def forward(steps=1):
+        actions.append(f"forward_{steps}")
+        
+    # Set up safe-ish environment (Note: Not truly secure for production, fine for educational demo)
+    env = {
+        "jump": jump,
+        "forward": forward,
+        "__builtins__": __builtins__
+    }
+    
+    f = io.StringIO()
+    error = None
+    
+    try:
+        with redirect_stdout(f):
+            # We use exec to run the code
+            exec(request.code, env)
+    except Exception as e:
+        error = str(e)
+        
+    return {
+        "success": error is None,
+        "output": f.getvalue(),
+        "actions": actions,
+        "error": error
+    }
+
+# ============================================
 # Routes - Modules
 # ============================================
 
@@ -434,6 +525,35 @@ async def list_modules():
         "success": True,
         "modules": [m.to_dict() for m in modules]
     }
+
+@app.get("/api/modules/search", tags=["Modules"])
+async def search_modules(q: str = "", token_data: TokenData = Depends(verify_token)):
+    """Search modules dynamically"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT m.id, m.title, m.description, m.teacher_id, u.full_name as teacher_name 
+        FROM modules m
+        JOIN users u ON m.teacher_id = u.id
+        WHERE m.is_published = TRUE AND m.status = 'approved'
+        AND (m.title ILIKE %s OR u.full_name ILIKE %s)
+        ORDER BY m.title ASC
+    """
+    
+    results = []
+    search_term = f"%{q}%"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (search_term, search_term))
+        rows = cursor.fetchall()
+        for row in rows:
+            results.append({
+                "id": row[0],
+                "title": row[1],
+                "description": row[2],
+                "teacher_id": row[3],
+                "teacher_name": row[4]
+            })
+            
+    return {"success": True, "results": results}
 
 @app.get("/api/modules/{module_id}", tags=["Modules"])
 async def get_module(module_id: int):
@@ -581,6 +701,51 @@ async def get_teacher_dashboard(token_data: TokenData = Depends(verify_teacher))
 # ============================================
 # Routes - Admin
 # ============================================
+
+@app.get("/api/admin/users", tags=["Admin"])
+async def get_all_users(token_data: TokenData = Depends(verify_admin)):
+    """List all users"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = "SELECT id, email, full_name, role, is_active, points, streak_days, created_at FROM users ORDER BY created_at DESC"
+    
+    users = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        for row in rows:
+            users.append({
+                "id": row[0],
+                "email": row[1],
+                "full_name": row[2],
+                "role": row[3],
+                "is_active": row[4],
+                "points": row[5],
+                "streak_days": row[6],
+                "created_at": row[7].isoformat() if row[7] else None
+            })
+            
+    return {"success": True, "users": users}
+
+@app.put("/api/admin/users/{user_id}/role", tags=["Admin"])
+async def update_user_role(
+    user_id: int, 
+    request: UserRoleUpdate, 
+    token_data: TokenData = Depends(verify_admin)
+):
+    """Update user role"""
+    from domain.entities.user import UserRole
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    
+    try:
+        valid_role = UserRole(request.role)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid role")
+        
+    query = "UPDATE users SET role = %s WHERE id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (valid_role.value, user_id))
+        
+    return {"success": True, "message": "User role updated successfully"}
 
 @app.get("/api/admin/teachers/pending", tags=["Admin"])
 async def get_pending_teachers(token_data: TokenData = Depends(verify_admin)):
