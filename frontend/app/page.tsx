@@ -87,7 +87,7 @@ export default function HomePage() {
         <div className="container mx-auto px-4">
           <div className="mb-12 text-center">
             <h2 className="mb-4 text-3xl font-bold text-foreground md:text-4xl">
-              Por que elegir CodeKids
+              Por que elegir RoboLearn
             </h2>
             <p className="text-muted-foreground">
               Disenado especialmente para estudiantes en etapa escolar
@@ -267,10 +267,10 @@ export default function HomePage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                 <Code className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="font-semibold text-foreground">CodeKids</span>
+              <span className="font-semibold text-foreground">RoboLearn</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              2024 CodeKids. Plataforma educativa de programacion.
+              2024 RoboLearn. Plataforma educativa de programacion.
             </p>
           </div>
         </div>

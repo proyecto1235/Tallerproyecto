@@ -24,6 +24,23 @@ Plataforma web para el aprendizaje de programación y robótica para niños y ad
 
 El proyecto tiene un aspecto amigable y muy divertido para los estudiantes, cuenta con una interfaz muy intuitiva y fácil de usar.
 
+## Deslpiegue de desarrollo
+
+```bash
+git clone https://github.com/proyecto1235/Tallerproyecto.git
+
+cd backend
+python3.11 -m venv .venv
+source .venv/Scripts/activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+# En otra terminal
+cd frontend
+npm install
+npm run dev
+```
+
 ![home](./media/robolearn-home.png)
 Página principal de la aplicación.
 

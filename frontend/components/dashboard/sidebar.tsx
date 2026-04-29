@@ -38,6 +38,7 @@ const studentLinks = [
   { href: "/dashboard/challenges", label: "Retos", icon: Trophy },
   { href: "/dashboard/classes", label: "Mis Clases", icon: Users },
   { href: "/dashboard/achievements", label: "Logros", icon: Star },
+  { href: "/dashboard/settings", label: "Ajustes", icon: Settings },
 ]
 
 const teacherLinks = [
@@ -55,8 +56,8 @@ const adminLinks = [
   { href: "/dashboard/users", label: "Usuarios", icon: Users },
   { href: "/dashboard/teacher-requests", label: "Solicitudes", icon: UserCheck },
   { href: "/dashboard/content-review", label: "Contenido", icon: FileText },
-  { href: "/dashboard/system", label: "Sistema", icon: Settings },
-  { href: "/dashboard/audit", label: "Auditoria", icon: Shield },
+  { href: "/dashboard/audit", label: "Auditoría", icon: Shield },
+  { href: "/dashboard/settings", label: "Ajustes", icon: Settings },
 ]
 
 export function Sidebar({ user }: SidebarProps) {
@@ -96,7 +97,7 @@ export function Sidebar({ user }: SidebarProps) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <Code className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="font-bold text-foreground">CodeKids</span>
+          <span className="font-bold text-foreground">RoboLearn</span>
         </Link>
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
@@ -126,7 +127,7 @@ export function Sidebar({ user }: SidebarProps) {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
             <Code className="h-5 w-5 text-sidebar-primary-foreground" />
           </div>
-          <span className="text-xl font-bold">CodeKids</span>
+          <span className="text-xl font-bold">RoboLearn</span>
         </div>
 
         {/* User info */}
@@ -160,7 +161,7 @@ export function Sidebar({ user }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto p-3">
           <ul className="space-y-1">
             {links.map((link) => {
-              const isActive = pathname === link.href
+              const isActive = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href))
               return (
                 <li key={link.href}>
                   <Link

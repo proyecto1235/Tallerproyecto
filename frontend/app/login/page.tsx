@@ -37,7 +37,7 @@ export default function LoginPage() {
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
           <Code className="h-6 w-6 text-primary-foreground" />
         </div>
-        <span className="text-2xl font-bold text-foreground">CodeKids</span>
+        <span className="text-2xl font-bold text-foreground">RoboLearn</span>
       </Link>
 
       <Card className="w-full max-w-md border-0 shadow-lg">

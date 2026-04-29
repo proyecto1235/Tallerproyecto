@@ -72,7 +72,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
           <p className="text-muted-foreground">Supervision general del sistema</p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/system">
+          <Link href="/dashboard/settings">
             <Settings className="mr-2 h-4 w-4" />
             Configuracion
           </Link>
@@ -231,7 +231,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                 </div>
               ))}
               <Button variant="outline" className="mt-2 w-full" asChild>
-                <Link href="/dashboard/system">
+                <Link href="/dashboard/audit">
                   Ver detalles
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
