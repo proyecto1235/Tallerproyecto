@@ -18,8 +18,15 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Settings2, User, Bell, Shield, Palette } from "lucide-react"
+import { Settings2, User, Bell, Shield, Palette, Loader2, CheckCircle2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const profileFormSchema = z.object({
@@ -28,12 +35,29 @@ const profileFormSchema = z.object({
   bio: z.string().max(160, "La biografía no puede tener más de 160 caracteres.").optional(),
 })
 
+const PREDEFINED_AVATARS = [
+  "https://api.dicebear.com/7.x/bottts/svg?seed=CoderNinja",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=RoboMaster",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Byte",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Pixel",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Gizmo",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Spark",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Cyber",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Nexus",
+]
+
 export default function SettingsPage() {
   const [savedProfile, setSavedProfile] = useState({
-    username: "CoderNinja",
-    email: "ninja@ejemplo.com",
-    bio: "¡Aprendiendo a dominar Python y la robótica!",
+    username: "",
+    email: "",
+    bio: "",
+    avatar_url: ""
   })
+  
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false)
+  const [selectedAvatar, setSelectedAvatar] = useState("")
 
   // Estado para la sección de Seguridad
   const [securityForm, setSecurityForm] = useState({
@@ -51,17 +75,86 @@ export default function SettingsPage() {
 
   const form = useForm<z.infer<typeof profileFormSchema>>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues: savedProfile,
+    defaultValues: {
+      username: "",
+      email: "",
+      bio: "",
+    },
   })
 
-  // Update form if savedProfile changes (e.g. from localStorage in real app)
+  // Fetch initial profile
   useEffect(() => {
-    form.reset(savedProfile)
-  }, [savedProfile, form])
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/users/profile", {
+          credentials: 'include'
+        })
+        const data = await res.json()
+        if (data.success) {
+          const profileData = {
+            username: data.user.full_name || "",
+            email: data.user.email || "",
+            bio: data.user.bio || "",
+            avatar_url: data.user.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${data.user.full_name}`
+          }
+          setSavedProfile(profileData)
+          setSelectedAvatar(profileData.avatar_url)
+          form.reset({
+            username: profileData.username,
+            email: profileData.email,
+            bio: profileData.bio,
+          })
+        } else {
+          toast.error("No se pudo cargar el perfil.")
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error)
+        toast.error("Error de conexión al cargar el perfil.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchProfile()
+  }, [form])
 
-  function onSubmit(data: z.infer<typeof profileFormSchema>) {
-    setSavedProfile(data)
-    toast.success("Perfil actualizado correctamente")
+  async function onSubmit(data: z.infer<typeof profileFormSchema>) {
+    setIsSaving(true)
+    try {
+      const res = await fetch("http://localhost:8000/api/users/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: 'include',
+        body: JSON.stringify({
+          full_name: data.username,
+          email: data.email,
+          bio: data.bio,
+          avatar_url: selectedAvatar
+        })
+      })
+      const result = await res.json()
+      
+      if (result.success) {
+        setSavedProfile({
+          username: data.username,
+          email: data.email,
+          bio: data.bio || "",
+          avatar_url: selectedAvatar
+        })
+        toast.success("Perfil actualizado correctamente")
+      } else {
+        toast.error(result.error || "No se pudo guardar el perfil.")
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error)
+      toast.error("Error de conexión al guardar el perfil.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleAvatarSelect = (url: string) => {
+    setSelectedAvatar(url)
+    setIsAvatarModalOpen(false)
   }
 
   const handleSecuritySubmit = (e: React.FormEvent) => {
@@ -86,6 +179,14 @@ export default function SettingsPage() {
 
   const handleNotificationsSubmit = () => {
     toast.success("Preferencias de notificaciones guardadas")
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-full min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -125,14 +226,16 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-6 mb-8">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-8">
                 <Avatar className="w-24 h-24 border-4 border-background shadow-md">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${savedProfile.username}`} />
+                  <AvatarImage src={selectedAvatar} />
                   <AvatarFallback>{savedProfile.username.substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
-                <div className="space-y-2">
-                  <Button variant="outline" size="sm">Cambiar Avatar</Button>
-                  <p className="text-xs text-muted-foreground">Recomendado: 256x256px</p>
+                <div className="space-y-2 text-center sm:text-left mt-2 sm:mt-0">
+                  <Button variant="outline" size="sm" onClick={() => setIsAvatarModalOpen(true)}>
+                    Cambiar Avatar
+                  </Button>
+                  <p className="text-xs text-muted-foreground">Selecciona uno de los avatares disponibles.</p>
                 </div>
               </div>
 
@@ -187,8 +290,25 @@ export default function SettingsPage() {
                     )}
                   />
                   <div className="flex justify-end pt-4 border-t gap-4">
-                    <Button type="button" variant="ghost">Cancelar</Button>
-                    <Button type="submit" className="font-bold">Guardar Cambios</Button>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      onClick={() => {
+                        form.reset({
+                          username: savedProfile.username,
+                          email: savedProfile.email,
+                          bio: savedProfile.bio,
+                        })
+                        setSelectedAvatar(savedProfile.avatar_url)
+                      }}
+                      disabled={isSaving}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button type="submit" className="font-bold" disabled={isSaving}>
+                      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {isSaving ? "Guardando..." : "Guardar Cambios"}
+                    </Button>
                   </div>
                 </form>
               </Form>
@@ -320,8 +440,38 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
-
       </Tabs>
+
+      {/* Selector de Avatar */}
+      <Dialog open={isAvatarModalOpen} onOpenChange={setIsAvatarModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Elige tu Avatar</DialogTitle>
+            <DialogDescription>
+              Selecciona tu robot favorito para representarte en RoboLearn.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-4 gap-4 py-4">
+            {PREDEFINED_AVATARS.map((url, idx) => (
+              <div 
+                key={idx} 
+                onClick={() => handleAvatarSelect(url)}
+                className={`relative cursor-pointer rounded-lg p-2 border-2 transition-all hover:scale-105 ${selectedAvatar === url ? 'border-primary bg-primary/10' : 'border-transparent bg-secondary'}`}
+              >
+                <img src={url} alt={`Avatar ${idx}`} className="w-full h-auto aspect-square object-contain" />
+                {selectedAvatar === url && (
+                  <div className="absolute -top-2 -right-2 bg-primary text-primary-foreground rounded-full p-0.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" onClick={() => setIsAvatarModalOpen(false)}>Cerrar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

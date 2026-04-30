@@ -16,12 +16,16 @@ from config.database_init import initialize_database
 from infrastructure.adapters.output.postgres.connection import PostgresConnection
 from infrastructure.adapters.output.postgres.user_repository_impl import UserRepositoryImpl
 from infrastructure.adapters.output.postgres.module_repository_impl import ModuleRepositoryImpl
+from infrastructure.adapters.output.postgres.enrollment_repository_impl import EnrollmentRepositoryImpl
+from infrastructure.adapters.output.postgres.teacher_repository_impl import TeacherRepositoryImpl
 from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
 from application.services.ai_service_impl import AIServiceImpl
 from application.services.ai_recommender import RecommendationService
 from application.useCases.register_user import RegisterUserUseCase
 from application.useCases.get_recommendations import GetRecommendationsUseCase
 from application.useCases.enroll_student import EnrollStudentUseCase
+from application.useCases.teacher_dashboard import TeacherDashboardUseCase
+from application.useCases.generate_ai_alerts import GenerateAIAlertsUseCase
 from domain.entities.user import User, UserRole
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -72,6 +76,8 @@ class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     password: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
 
 class UserRoleUpdate(BaseModel):
     role: str
@@ -213,6 +219,8 @@ async def verify_admin(token_data: TokenData = Depends(verify_token)) -> TokenDa
 
 user_repository = UserRepositoryImpl()
 module_repository = ModuleRepositoryImpl()
+enrollment_repository = EnrollmentRepositoryImpl()
+teacher_repository = TeacherRepositoryImpl()
 event_repository = EventRepository()
 ai_service = AIServiceImpl()
 
@@ -374,19 +382,19 @@ async def update_profile(
         user.email = request.email
     if request.password is not None and request.password != "":
         user.password_hash = pwd_context.hash(request.password)
+    if request.avatar_url is not None:
+        user.avatar_url = request.avatar_url
+    if request.bio is not None:
+        user.bio = request.bio
         
-    # Note: user_repository.update is not implemented in our view, 
-    # but let's assume it exists or we need to implement it.
-    # Let's add it manually using raw SQL if needed, or check if it exists.
-    # Assuming update method exists on user_repository:
     try:
         from infrastructure.adapters.output.postgres.connection import PostgresConnection
-        query = "UPDATE users SET full_name = %s, email = %s, password_hash = %s WHERE id = %s"
+        query = "UPDATE users SET full_name = %s, email = %s, password_hash = %s, avatar_url = %s, bio = %s WHERE id = %s"
         with PostgresConnection.get_cursor() as cursor:
-            cursor.execute(query, (user.full_name, user.email, user.password_hash, user.id))
+            cursor.execute(query, (user.full_name, user.email, user.password_hash, user.avatar_url, user.bio, user.id))
             
         await event_repository.log_event("profile_updated", user.id, {"email": user.email})
-        return {"success": True, "message": "Profile updated successfully"}
+        return {"success": True, "message": "Profile updated successfully", "user": user.to_dict()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -555,6 +563,26 @@ async def search_modules(q: str = "", token_data: TokenData = Depends(verify_tok
             
     return {"success": True, "results": results}
 
+@app.get("/api/modules/enrolled", tags=["Modules"])
+async def get_enrolled_modules(token_data: TokenData = Depends(verify_token)):
+    """Get modules the student is enrolled in"""
+    # Fetch enrollments
+    enrollments = await enrollment_repository.get_by_student(token_data.user_id)
+    
+    # We want to return module details as well. We can do this by getting each module.
+    # A more efficient way is a custom query or joining, but here we can just loop as it's a small scale.
+    # We'll return full module info along with enrollment status.
+    result = []
+    for enr in enrollments:
+        module = await module_repository.get_by_id(enr.module_id)
+        if module:
+            mod_dict = module.to_dict()
+            mod_dict["enrollment_status"] = enr.status
+            mod_dict["enrolled_at"] = enr.enrolled_at.isoformat() if enr.enrolled_at else None
+            result.append(mod_dict)
+            
+    return {"success": True, "modules": result}
+
 @app.get("/api/modules/{module_id}", tags=["Modules"])
 async def get_module(module_id: int):
     """Get module by ID"""
@@ -654,11 +682,11 @@ async def enroll_module(
     token_data: TokenData = Depends(verify_token)
 ):
     """Enroll in a module"""
-    use_case = EnrollStudentUseCase(user_repository, module_repository, event_repository)
+    use_case = EnrollStudentUseCase(user_repository, module_repository, event_repository, enrollment_repository)
     result = await use_case.execute(token_data.user_id, module_id)
     
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error"))
+        return JSONResponse(status_code=400, content=result)
     
     return result
 
@@ -689,14 +717,38 @@ async def get_user_history(token_data: TokenData = Depends(verify_token)):
 @app.get("/api/teacher/dashboard", tags=["Teacher"])
 async def get_teacher_dashboard(token_data: TokenData = Depends(verify_teacher)):
     """Get teacher dashboard metrics"""
-    return {
-        "success": True,
-        "metrics": {
-            "active_students": 15,
-            "average_score": 85,
-            "alerts": ["Student 3 is struggling with loops"]
-        }
-    }
+    use_case = TeacherDashboardUseCase(teacher_repository)
+    result = await use_case.get_metrics(token_data.user_id)
+    if not result.get("success"):
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+@app.get("/api/teacher/students", tags=["Teacher"])
+async def get_teacher_students(token_data: TokenData = Depends(verify_teacher)):
+    """Get students enrolled in teacher's modules"""
+    use_case = TeacherDashboardUseCase(teacher_repository)
+    result = await use_case.get_students(token_data.user_id)
+    if not result.get("success"):
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+@app.get("/api/teacher/students/{student_id}", tags=["Teacher"])
+async def get_teacher_student_details(student_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Get specific student details for a teacher"""
+    use_case = TeacherDashboardUseCase(teacher_repository)
+    result = await use_case.get_student_detail(token_data.user_id, student_id)
+    if not result.get("success"):
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+@app.get("/api/teacher/alerts", tags=["Teacher"])
+async def get_teacher_alerts(token_data: TokenData = Depends(verify_teacher)):
+    """Get dynamic AI alerts for the teacher dashboard"""
+    use_case = GenerateAIAlertsUseCase(teacher_repository)
+    result = await use_case.execute(token_data.user_id)
+    if not result.get("success"):
+        return JSONResponse(status_code=400, content=result)
+    return result
 
 # ============================================
 # Routes - Admin

@@ -22,6 +22,8 @@ class User:
         role: UserRole = UserRole.STUDENT,
         is_active: bool = True,
         teacher_request_status: Optional[TeacherRequestStatus] = None,
+        avatar_url: Optional[str] = None,
+        bio: Optional[str] = None,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
     ):
@@ -32,6 +34,8 @@ class User:
         self.role = role
         self.is_active = is_active
         self.teacher_request_status = teacher_request_status
+        self.avatar_url = avatar_url
+        self.bio = bio
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 
@@ -43,6 +47,8 @@ class User:
             "role": self.role.value,
             "is_active": self.is_active,
             "teacher_request_status": self.teacher_request_status.value if self.teacher_request_status else None,
+            "avatar_url": self.avatar_url,
+            "bio": self.bio,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
