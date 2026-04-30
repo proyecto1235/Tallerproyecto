@@ -12,27 +12,40 @@ export default function ModulesPage() {
 
   useEffect(() => {
     const fetchModules = async () => {
+      const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
       try {
-        const res = await fetch("http://localhost:8000/api/modules/enrolled", {
+        const res = await fetch(`${API_URL}/modules/enrolled`, {
           credentials: 'include'
         })
+        if (!res.ok) {
+          throw new Error(`Network error: ${res.status}`)
+        }
         const data = await res.json()
-        if (data.success) {
+        if (data.success && data.modules && data.modules.length > 0) {
           const mapped = data.modules.map((m: any) => ({
             id: m.id.toString(),
             title: m.title,
             description: m.description,
             level: m.order || 1,
             status: m.enrollment_status === "completed" ? "completed" : "in-progress",
-            progress: m.enrollment_status === "completed" ? 100 : 45 // We can replace 45 with actual progress later if available
+            progress: m.enrollment_status === "completed" ? 100 : 45 
           }))
           setModules(mapped.sort((a: any, b: any) => a.level - b.level))
+          setLoading(false)
+          return
         }
       } catch (error) {
         console.error("Error fetching modules", error)
-      } finally {
-        setLoading(false)
       }
+      
+      // Fallback a datos mockeados (Cursos Piloto) si falla la DB o está vacía
+      setModules([
+        { id: "piloto-1", title: "Fundamentos de Robótica", description: "Aprende qué es un robot, sus partes y cómo piensa.", level: 1, status: "completed", progress: 100 },
+        { id: "piloto-2", title: "Programación Lógica Básica", description: "Variables, bucles y condicionales. El cerebro del robot.", level: 2, status: "in-progress", progress: 45 },
+        { id: "piloto-3", title: "Sensores y Entorno", description: "Cómo los robots ven y sienten el mundo que los rodea.", level: 3, status: "locked", progress: 0 },
+        { id: "piloto-4", title: "Tu Primer Proyecto Autónomo", description: "Programa un robot que esquive obstáculos por sí solo.", level: 4, status: "locked", progress: 0 },
+      ])
+      setLoading(false)
     }
     fetchModules()
   }, [])

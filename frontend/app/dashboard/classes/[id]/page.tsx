@@ -28,23 +28,34 @@ export default function ClassDetailsPage() {
         })
         const data = await res.json()
 
-        if (data.success) {
+        if (data.success && data.modules) {
           // Buscamos el curso específico en la lista de matriculados
           const currentClass = data.modules.find((m: any) => m.id.toString() === classId)
           if (currentClass) {
             setClassData(currentClass)
-          } else {
-            setErrorMsg("No tienes acceso a este curso o no existe.")
+            setIsLoading(false)
+            return
           }
-        } else {
-          setErrorMsg(data.error || "Error al cargar el curso.")
         }
       } catch (error) {
         console.error("Error fetching class details:", error)
-        setErrorMsg("Error de conexión con el servidor.")
-      } finally {
-        setIsLoading(false)
       }
+      
+      // Fallback: Si no hay backend o estamos usando el curso piloto
+      if (classId.startsWith("piloto-")) {
+        setClassData({
+          id: classId,
+          title: classId === "piloto-1" ? "Fundamentos de Robótica" : "Clase Piloto de Prueba",
+          description: "Bienvenido a tu clase piloto. Aquí aprenderás los conceptos clave interactuando con teoría y ejercicios.",
+          order: 1,
+          enrollment_status: "in-progress",
+          enrolled_at: new Date().toISOString()
+        })
+        setErrorMsg(null)
+      } else {
+        setErrorMsg("No tienes acceso a este curso o el backend no está disponible.")
+      }
+      setIsLoading(false)
     }
 
     fetchClassDetails()

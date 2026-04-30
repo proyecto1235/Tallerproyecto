@@ -16,7 +16,7 @@ export default function ChallengesPage() {
           credentials: 'include'
         })
         const data = await res.json()
-        if (data.success) {
+        if (data.success && data.challenges && data.challenges.length > 0) {
           const mapped = data.challenges.map((c: any) => ({
             id: c.id.toString(),
             title: c.title,
@@ -28,12 +28,21 @@ export default function ChallengesPage() {
             timeRemaining: `Autor: ${c.author_name}`
           }))
           setChallenges(mapped)
+          setIsLoading(false)
+          return
         }
       } catch (error) {
         console.error("Error fetching challenges", error)
-      } finally {
-        setIsLoading(false)
       }
+      
+      // Fallback a retos piloto
+      const mockChallenges: ChallengeCardProps[] = [
+        { id: "reto-1", title: "Velocidad Máxima", description: "Configura el motor para llegar al límite sin sobrecalentar.", difficulty: "Fácil", reward: 50, status: "active", type: "daily", timeRemaining: "Termina en 5h" },
+        { id: "reto-2", title: "Laberinto Ciego", description: "Programa el robot para que salga del laberinto usando solo el sensor ultrasónico.", difficulty: "Medio", reward: 150, status: "active", type: "weekly", timeRemaining: "Termina en 3 días" },
+        { id: "reto-3", title: "Optimización de Batería", description: "Reduce el consumo del código en un 30%.", difficulty: "Difícil", reward: 300, status: "locked", type: "special", timeRemaining: "Bloqueado" }
+      ]
+      setChallenges(mockChallenges)
+      setIsLoading(false)
     }
     fetchChallenges()
   }, [])

@@ -24,16 +24,28 @@ export default function ExercisesPage() {
           credentials: 'include'
         })
         const data = await res.json()
-        if (data.success && data.exercises.length > 0) {
+        if (data.success && data.exercises && data.exercises.length > 0) {
           setExercises(data.exercises)
           setSelectedExercise(data.exercises[0])
           setCode(data.exercises[0].instructions || "# Escribe tu código aquí\n")
+          setLoading(false)
+          return
         }
       } catch (e) {
         console.error("Error fetching exercises", e)
-      } finally {
-        setLoading(false)
       }
+      
+      // Fallback a ejercicios piloto si el backend falla o está vacío
+      const mockExercises = [
+        { id: "ex-1", title: "Variables (Piloto)", module_title: "Programación Lógica Básica", description: "Crea una variable llamada 'velocidad' y asígnale el valor 100.", difficulty: 1, points: 10, instructions: "velocidad = 0\n# Cambia la velocidad a 100\n" },
+        { id: "ex-2", title: "Bucles For (Piloto)", module_title: "Programación Lógica Básica", description: "Crea un bucle for que imprima los números del 1 al 5.", difficulty: 2, points: 20, instructions: "# Imprime los números del 1 al 5\n" },
+        { id: "ex-3", title: "Funciones (Piloto)", module_title: "Programación Lógica Básica", description: "Crea una función llamada 'saludar' que imprima 'Hola Robot'.", difficulty: 3, points: 30, instructions: "def saludar():\n    # Escribe aquí\n    pass\n\nsaludar()" }
+      ]
+      
+      setExercises(mockExercises)
+      setSelectedExercise(mockExercises[0])
+      setCode(mockExercises[0].instructions)
+      setLoading(false)
     }
     fetchExercises()
   }, [])

@@ -23,7 +23,7 @@ export default function ModuleViewPage() {
           credentials: 'include'
         })
         const data = await res.json()
-        if (data.success) {
+        if (data.success && data.module) {
           setModule(data.module)
           // Fetch exercises too
           const exRes = await fetch(`http://localhost:8000/api/modules/${params.id}/exercises`, {
@@ -33,12 +33,78 @@ export default function ModuleViewPage() {
           if (exData.success) {
             setExercises(exData.exercises)
           }
+          setIsLoading(false)
+          return
         }
       } catch (error) {
         console.error("Error fetching module", error)
-      } finally {
-        setIsLoading(false)
       }
+      
+      // Fallback: Cursos Piloto si falla la API
+      if (String(params.id).startsWith("piloto-")) {
+        const pilotData: any = {
+          "piloto-1": {
+            id: "piloto-1",
+            title: "Fundamentos de Robótica",
+            description: "Aprende qué es un robot, sus partes y cómo piensa.",
+            theory_content: `
+# ¿Qué es un Robot?
+
+Un **robot** es una máquina programable capaz de llevar a cabo una serie de acciones complejas de forma automática. Los robots pueden ser controlados por un dispositivo de control externo o bien el control puede estar integrado en el propio robot.
+
+## Partes principales de un robot:
+1. **Sensores**: Permiten al robot interactuar y percibir el mundo (ej. cámaras, sensores ultrasónicos).
+2. **Actuadores**: Los "músculos" del robot (motores, servos).
+3. **Controlador**: El "cerebro" o placa base que procesa la lógica.
+
+---
+### Concepto Clave
+Para que un robot funcione, necesita **Software** (el código) y **Hardware** (las piezas físicas).
+            `
+          },
+          "piloto-2": {
+            id: "piloto-2",
+            title: "Programación Lógica Básica",
+            theory_content: "# Lógica de Programación\n\nAprenderemos sobre **Variables**, **Condicionales** y **Bucles**. Sin ellos, un robot no sabría qué decidir."
+          }
+        }
+        
+        const pilotExercises: any = {
+          "piloto-1": [
+            {
+              id: "ex-1",
+              title: "Test de Componentes",
+              theory_content: "Responde este pequeño cuestionario para validar lo aprendido.",
+              type: "multiple_choice",
+              difficulty: "easy",
+              points: 10,
+              content: {
+                question: "¿Cuál de estos es un sensor?",
+                options: ["Motor DC", "Cámara", "Batería"],
+                correct_answer: "Cámara"
+              }
+            }
+          ],
+          "piloto-2": [
+            {
+              id: "ex-2",
+              title: "Crea tu primera variable",
+              theory_content: "Usa el siguiente bloque de código para definir la velocidad.",
+              type: "coding",
+              difficulty: "medium",
+              points: 20,
+              content: {
+                initial_code: "velocidad = 0\n# Cambia la velocidad a 100",
+                expected_output: "velocidad = 100"
+              }
+            }
+          ]
+        }
+        
+        setModule(pilotData[String(params.id)] || null)
+        setExercises(pilotExercises[String(params.id)] || [])
+      }
+      setIsLoading(false)
     }
     
     if (params.id) fetchModule()

@@ -39,13 +39,21 @@ export default function ClassesPage() {
           credentials: 'include'
         })
         const data = await res.json()
-        if (data.success) {
+        if (data.success && data.modules && data.modules.length > 0) {
           setEnrolledModules(data.modules)
           setEnrolledModuleIds(data.modules.map((m: any) => m.id))
+          return
         }
       } catch (error) {
         console.error("Error fetching enrolled modules:", error)
       }
+      
+      // Fallback si no hay backend o está vacío
+      const mockEnrolled = [
+        { id: "piloto-1", title: "Fundamentos de Robótica", description: "Aprende qué es un robot, sus partes y cómo piensa.", teacher_name: "Admin", enrollment_status: "active" }
+      ]
+      setEnrolledModules(mockEnrolled)
+      setEnrolledModuleIds(["piloto-1" as any])
     }
     fetchEnrolled()
   }, [])
@@ -59,14 +67,23 @@ export default function ClassesPage() {
           credentials: 'include'
         })
         const data = await res.json()
-        if (data.success) {
+        if (data.success && data.results && data.results.length > 0) {
           setAvailableClasses(data.results)
+          setIsLoading(false)
+          return
         }
       } catch (error) {
         console.error("Error fetching classes:", error)
-      } finally {
-        setIsLoading(false)
       }
+      
+      // Fallback de clases piloto para matricularse
+      const mockAvailable = [
+        { id: "piloto-2", title: "Programación Lógica Básica", description: "Variables, bucles y condicionales. El cerebro del robot.", teacher_name: "Prof. Carlos" },
+        { id: "piloto-3", title: "Sensores y Entorno", description: "Cómo los robots ven y sienten el mundo que los rodea.", teacher_name: "Escuela San José" }
+      ].filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()) || c.teacher_name.toLowerCase().includes(searchQuery.toLowerCase()))
+      
+      setAvailableClasses(mockAvailable)
+      setIsLoading(false)
     }
 
     const delayDebounceFn = setTimeout(() => {
