@@ -6,11 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, ArrowLeft, BookOpen } from "lucide-react"
 import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import { InlineExercise } from "@/components/interactive/InlineExercise"
 
 export default function ModuleViewPage() {
   const params = useParams()
   const router = useRouter()
   const [module, setModule] = useState<any>(null)
+  const [exercises, setExercises] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -22,6 +25,14 @@ export default function ModuleViewPage() {
         const data = await res.json()
         if (data.success) {
           setModule(data.module)
+          // Fetch exercises too
+          const exRes = await fetch(`http://localhost:8000/api/modules/${params.id}/exercises`, {
+            credentials: 'include'
+          })
+          const exData = await exRes.json()
+          if (exData.success) {
+            setExercises(exData.exercises)
+          }
         }
       } catch (error) {
         console.error("Error fetching module", error)
@@ -73,8 +84,27 @@ export default function ModuleViewPage() {
       <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur">
         <CardContent className="p-6">
           <div className="prose prose-invert max-w-none">
-            <ReactMarkdown>{module.description || "No hay contenido disponible para este módulo."}</ReactMarkdown>
+            {module.theory_content ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{module.theory_content}</ReactMarkdown>
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{module.description || "No hay teoría disponible para este módulo."}</ReactMarkdown>
+            )}
           </div>
+          
+          {exercises.length > 0 && (
+            <div className="mt-12 space-y-12 border-t border-border pt-8">
+              {exercises.map((exercise, index) => (
+                <div key={exercise.id} className="space-y-6">
+                  {exercise.theory_content && (
+                    <div className="prose prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{exercise.theory_content}</ReactMarkdown>
+                    </div>
+                  )}
+                  <InlineExercise exercise={exercise} />
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

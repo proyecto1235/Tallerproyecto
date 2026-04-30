@@ -10,8 +10,8 @@ class ModuleRepositoryImpl(ModuleRepository):
     async def create(self, module: Module) -> Module:
         """Create a new module"""
         query = """
-            INSERT INTO modules (title, description, teacher_id, status, "order", is_published, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO modules (title, description, theory_content, teacher_id, status, "order", is_published, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         
@@ -21,6 +21,7 @@ class ModuleRepositoryImpl(ModuleRepository):
                 (
                     module.title,
                     module.description,
+                    module.theory_content,
                     module.teacher_id,
                     module.status.value,
                     module.order,
@@ -36,7 +37,7 @@ class ModuleRepositoryImpl(ModuleRepository):
     async def get_by_id(self, module_id: int) -> Optional[Module]:
         """Get module by ID"""
         query = """
-            SELECT id, title, description, teacher_id, status, "order", is_published, created_at, updated_at 
+            SELECT id, title, description, theory_content, teacher_id, status, "order", is_published, created_at, updated_at 
             FROM modules WHERE id = %s
         """
         
@@ -48,7 +49,7 @@ class ModuleRepositoryImpl(ModuleRepository):
     async def get_by_teacher(self, teacher_id: int) -> List[Module]:
         """Get modules by teacher"""
         query = """
-            SELECT id, title, description, teacher_id, status, "order", is_published, created_at, updated_at 
+            SELECT id, title, description, theory_content, teacher_id, status, "order", is_published, created_at, updated_at 
             FROM modules WHERE teacher_id = %s ORDER BY "order" ASC
         """
         
@@ -60,7 +61,7 @@ class ModuleRepositoryImpl(ModuleRepository):
     async def list_published(self) -> List[Module]:
         """Get all published modules"""
         query = """
-            SELECT id, title, description, teacher_id, status, "order", is_published, created_at, updated_at 
+            SELECT id, title, description, theory_content, teacher_id, status, "order", is_published, created_at, updated_at 
             FROM modules WHERE is_published = TRUE AND status = 'approved' ORDER BY "order" ASC
         """
         
@@ -73,7 +74,7 @@ class ModuleRepositoryImpl(ModuleRepository):
         """Update module"""
         query = """
             UPDATE modules 
-            SET title = %s, description = %s, teacher_id = %s, status = %s, 
+            SET title = %s, description = %s, theory_content = %s, teacher_id = %s, status = %s, 
                 "order" = %s, is_published = %s, updated_at = %s
             WHERE id = %s
         """
@@ -84,6 +85,7 @@ class ModuleRepositoryImpl(ModuleRepository):
                 (
                     module.title,
                     module.description,
+                    module.theory_content,
                     module.teacher_id,
                     module.status.value,
                     module.order,
@@ -109,10 +111,11 @@ class ModuleRepositoryImpl(ModuleRepository):
             id=row[0],
             title=row[1],
             description=row[2],
-            teacher_id=row[3],
-            status=ContentStatus(row[4]),
-            order=row[5],
-            is_published=row[6],
-            created_at=row[7],
-            updated_at=row[8],
+            theory_content=row[3],
+            teacher_id=row[4],
+            status=ContentStatus(row[5]),
+            order=row[6],
+            is_published=row[7],
+            created_at=row[8],
+            updated_at=row[9],
         )

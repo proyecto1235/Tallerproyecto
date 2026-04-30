@@ -73,11 +73,27 @@ export default function UsersPage() {
     }
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (selectedUser) {
-      setUsers(users.map(u => u.id === selectedUser.id ? { ...u, ...editForm } : u))
-      toast.success("Usuario actualizado correctamente")
-      setEditModalOpen(false)
+      try {
+        const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
+        const res = await fetch(`${API_URL}/admin/users/${selectedUser.id}/role`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: 'include',
+          body: JSON.stringify({ role: editForm.role })
+        })
+        const data = await res.json()
+        if (data.success) {
+          setUsers(users.map(u => u.id === selectedUser.id ? { ...u, ...editForm } : u))
+          toast.success("Usuario actualizado correctamente")
+          setEditModalOpen(false)
+        } else {
+          toast.error("Error al actualizar: " + data.error)
+        }
+      } catch (error) {
+        toast.error("Error de conexión")
+      }
     }
   }
 

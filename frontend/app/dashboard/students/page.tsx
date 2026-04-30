@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import {
   Table,
   TableBody,
@@ -93,6 +94,31 @@ export default function StudentsPage() {
       console.error("Error fetching student details:", error)
     } finally {
       setIsDetailsLoading(false)
+    }
+  }
+
+  const handleUnenroll = async (studentId: number, moduleId: number, moduleTitle: string) => {
+    if (!confirm(`¿Estás seguro de que deseas desmatricular al estudiante de "${moduleTitle}"?`)) return;
+    
+    try {
+      const res = await fetch(`http://localhost:8000/api/classes/${moduleId}/unenroll/${studentId}`, {
+        method: "POST",
+        credentials: 'include'
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`Estudiante desmatriculado de ${moduleTitle}`)
+        // Update local state by removing the module
+        setStudentDetails((prev: any) => ({
+          ...prev,
+          modules: prev.modules.filter((m: any) => m.id !== moduleId)
+        }))
+        // Note: The main table might need a refresh if that module was the only one
+      } else {
+        toast.error("Error: " + data.error)
+      }
+    } catch (e) {
+      toast.error("Error de conexión al desmatricular")
     }
   }
 
@@ -261,6 +287,15 @@ export default function StudentsPage() {
                       {mod.progress < 30 && mod.status === 'active' && (
                         <span className="text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> En riesgo</span>
                       )}
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-border flex justify-end">
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        onClick={() => handleUnenroll(studentDetails.id, mod.id, mod.title)}
+                      >
+                        Desmatricular
+                      </Button>
                     </div>
                   </div>
                 ))}

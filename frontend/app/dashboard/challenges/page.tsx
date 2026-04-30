@@ -1,75 +1,44 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ChallengeCard, ChallengeCardProps } from "@/components/dashboard/challenge-card"
-import { Target, Zap, Flame, Trophy } from "lucide-react"
+import { Target, Zap, Flame, Trophy, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 export default function ChallengesPage() {
-  const [userStars, setUserStars] = useState(1240)
-  
-  const [dailyChallenges, setDailyChallenges] = useState<ChallengeCardProps[]>([
-    {
-      id: "c1",
-      title: "Cazador de Errores",
-      description: "Encuentra y corrige 3 errores de sintaxis en el código de prueba.",
-      difficulty: "Fácil",
-      reward: 10,
-      status: "active",
-      type: "daily",
-      timeRemaining: "14h 23m"
-    },
-    {
-      id: "c2",
-      title: "Velocista de Variables",
-      description: "Crea 5 variables de diferentes tipos en menos de 2 minutos.",
-      difficulty: "Medio",
-      reward: 20,
-      status: "completed",
-      type: "daily"
+  const [userStars, setUserStars] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [challenges, setChallenges] = useState<ChallengeCardProps[]>([])
+  useEffect(() => {
+    const fetchChallenges = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/challenges", {
+          credentials: 'include'
+        })
+        const data = await res.json()
+        if (data.success) {
+          const mapped = data.challenges.map((c: any) => ({
+            id: c.id.toString(),
+            title: c.title,
+            description: c.description,
+            difficulty: c.difficulty === 1 ? "Fácil" : c.difficulty === 2 ? "Medio" : "Difícil",
+            reward: c.points,
+            status: "active",
+            type: "daily",
+            timeRemaining: `Autor: ${c.author_name}`
+          }))
+          setChallenges(mapped)
+        }
+      } catch (error) {
+        console.error("Error fetching challenges", error)
+      } finally {
+        setIsLoading(false)
+      }
     }
-  ])
+    fetchChallenges()
+  }, [])
 
-  const [weeklyChallenges, setWeeklyChallenges] = useState<ChallengeCardProps[]>([
-    {
-      id: "cw1",
-      title: "Maestro del Bucle",
-      description: "Usa un bucle For para imprimir los números pares del 1 al 100.",
-      difficulty: "Medio",
-      reward: 50,
-      status: "active",
-      type: "weekly",
-      timeRemaining: "3 días"
-    },
-    {
-      id: "cw2",
-      title: "Calculadora Básica",
-      description: "Crea un programa que sume, reste, multiplique y divida dos números introducidos por el usuario.",
-      difficulty: "Difícil",
-      reward: 100,
-      status: "active",
-      type: "weekly",
-      timeRemaining: "5 días"
-    }
-  ])
-
-  const [specialChallenges, setSpecialChallenges] = useState<ChallengeCardProps[]>([
-    {
-      id: "cs1",
-      title: "Desafío del Jefe: El Laberinto",
-      description: "Escribe las instrucciones condicionales exactas para que el robot salga del laberinto sin chocar.",
-      difficulty: "Jefe Final",
-      reward: 500,
-      status: "active",
-      type: "special",
-      timeRemaining: "Evento Especial"
-    }
-  ])
-
-  const handleTryChallenge = (id: string, type: "daily" | "weekly" | "special") => {
-    // Determine which setter to use
-    const setChallenges = type === "daily" ? setDailyChallenges : type === "weekly" ? setWeeklyChallenges : setSpecialChallenges
-    
+  const handleTryChallenge = (id: string) => {
     // Set to running
     setChallenges(prev => prev.map(c => c.id === id ? { ...c, status: "running" } : c))
     toast.info("Iniciando entorno del reto...")
@@ -85,6 +54,14 @@ export default function ChallengesPage() {
         return c
       }))
     }, 2000)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -111,31 +88,15 @@ export default function ChallengesPage() {
       <section className="space-y-6">
         <h2 className="text-2xl font-bold flex items-center gap-2 border-b pb-2">
           <Zap className="w-6 h-6 text-yellow-500" />
-          Retos Diarios
+          Retos Disponibles
         </h2>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {dailyChallenges.map(c => <ChallengeCard key={c.id} {...c} onClick={() => handleTryChallenge(c.id, "daily")} />)}
-        </div>
-      </section>
-
-      <section className="space-y-6">
-        <h2 className="text-2xl font-bold flex items-center gap-2 border-b pb-2">
-          <Flame className="w-6 h-6 text-orange-500" />
-          Retos Semanales
-        </h2>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {weeklyChallenges.map(c => <ChallengeCard key={c.id} {...c} onClick={() => handleTryChallenge(c.id, "weekly")} />)}
-        </div>
-      </section>
-
-      <section className="space-y-6">
-        <h2 className="text-2xl font-bold flex items-center gap-2 border-b pb-2">
-          <Trophy className="w-6 h-6 text-purple-500" />
-          Eventos Especiales
-        </h2>
-        <div className="grid gap-6 md:grid-cols-2">
-          {specialChallenges.map(c => <ChallengeCard key={c.id} {...c} onClick={() => handleTryChallenge(c.id, "special")} />)}
-        </div>
+        {challenges.length === 0 ? (
+          <p className="text-muted-foreground text-center py-10">No hay retos disponibles en este momento.</p>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {challenges.map(c => <ChallengeCard key={c.id} {...c} onClick={() => handleTryChallenge(c.id)} />)}
+          </div>
+        )}
       </section>
     </div>
   )

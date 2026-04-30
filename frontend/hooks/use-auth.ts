@@ -78,7 +78,8 @@ export function useAuth() {
           isAuthenticated: false,
         })
         // Usamos window.location.href para forzar recarga y limpiar todos los estados locales
-        if (window.location.pathname !== '/login') {
+        // No redirigir si estamos en login o register (rutas públicas)
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
             window.location.href = '/login'
         }
         return
@@ -117,6 +118,7 @@ export function useAuth() {
           isLoading: false,
           isAuthenticated: false,
         })
+        // No redirigir en rutas públicas (login, register) o en dashboard
         if (window.location.pathname.startsWith('/dashboard')) {
             window.location.href = '/login'
         }

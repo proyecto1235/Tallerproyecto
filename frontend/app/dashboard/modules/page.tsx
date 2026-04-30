@@ -1,45 +1,46 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { ModuleCard } from "@/components/dashboard/module-card"
-import { Map, BookOpen, Trophy } from "lucide-react"
+import { Map, BookOpen, Trophy, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 export default function ModulesPage() {
   const router = useRouter()
-  const modules = [
-    {
-      id: "mod-1",
-      title: "Fundamentos de la Programación",
-      description: "Aprende qué es un algoritmo, cómo piensan las computadoras y da tus primeros pasos en el mundo del código.",
-      level: 1,
-      status: "completed" as const,
-      progress: 100
-    },
-    {
-      id: "mod-2",
-      title: "Variables y Tipos de Datos",
-      description: "Descubre cómo guardar información en la memoria de la computadora usando variables, números y textos.",
-      level: 2,
-      status: "in-progress" as const,
-      progress: 45
-    },
-    {
-      id: "mod-3",
-      title: "Decisiones lógicas (If/Else)",
-      description: "Enseña a tu programa a tomar decisiones basadas en condiciones para crear flujos inteligentes.",
-      level: 3,
-      status: "locked" as const,
-      progress: 0
-    },
-    {
-      id: "mod-4",
-      title: "Bucles y Repeticiones",
-      description: "Automatiza tareas repetitivas usando bucles For y While. ¡Haz que la computadora trabaje por ti!",
-      level: 4,
-      status: "locked" as const,
-      progress: 0
+  const [modules, setModules] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchModules = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/modules/enrolled", {
+          credentials: 'include'
+        })
+        const data = await res.json()
+        if (data.success) {
+          const mapped = data.modules.map((m: any) => ({
+            id: m.id.toString(),
+            title: m.title,
+            description: m.description,
+            level: m.order || 1,
+            status: m.enrollment_status === "completed" ? "completed" : "in-progress",
+            progress: m.enrollment_status === "completed" ? 100 : 45 // We can replace 45 with actual progress later if available
+          }))
+          setModules(mapped.sort((a: any, b: any) => a.level - b.level))
+        }
+      } catch (error) {
+        console.error("Error fetching modules", error)
+      } finally {
+        setLoading(false)
+      }
     }
-  ]
+    fetchModules()
+  }, [])
+
+  if (loading) {
+    return <div className="flex h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+  }
+
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-10">
@@ -95,7 +96,7 @@ export default function ModulesPage() {
               <div className="flex-1 w-full lg:w-1/2">
                 <ModuleCard 
                   {...mod} 
-                  onClick={() => router.push('/dashboard/exercises')}
+                  onClick={() => router.push(`/dashboard/modules/${mod.id}`)}
                 />
               </div>
             </div>

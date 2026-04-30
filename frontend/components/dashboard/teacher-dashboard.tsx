@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -18,6 +19,7 @@ import {
   FileText,
   Plus,
   ArrowRight,
+  Trophy,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -26,13 +28,38 @@ interface TeacherDashboardProps {
 }
 
 export function TeacherDashboard({ user }: TeacherDashboardProps) {
-  // Mock data
-  const stats = {
-    totalStudents: 45,
-    activeClasses: 3,
-    pendingRequests: 5,
-    avgProgress: 68,
-  }
+  const [stats, setStats] = useState({
+    totalStudents: 0,
+    activeClasses: 0,
+    pendingRequests: 0,
+    avgProgress: 0,
+  })
+  
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/teacher/dashboard", {
+          credentials: "include"
+        })
+        const data = await res.json()
+        if (data.success && data.metrics) {
+          setStats({
+            totalStudents: data.metrics.total_students || 0,
+            activeClasses: data.metrics.active_classes || 0,
+            pendingRequests: data.metrics.pending_requests || 0,
+            avgProgress: data.metrics.avg_progress || 0,
+          })
+        }
+      } catch (error) {
+        console.error("Error fetching teacher metrics", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchMetrics()
+  }, [])
 
   const alerts = [
     {
@@ -76,6 +103,10 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
     { topic: "Variables", percentage: 15, trend: "stable" },
   ]
 
+  if (loading) {
+    return <div className="flex h-[400px] items-center justify-center">Cargando métricas...</div>
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -87,6 +118,12 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
           <p className="text-muted-foreground">Bienvenido, {user?.fullName || "Docente"}</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/challenges/create">
+              <Trophy className="mr-2 h-4 w-4" />
+              Crear Reto
+            </Link>
+          </Button>
           <Button variant="outline" asChild>
             <Link href="/dashboard/content">
               <FileText className="mr-2 h-4 w-4" />

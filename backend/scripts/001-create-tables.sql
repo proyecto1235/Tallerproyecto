@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS modules (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT,
+    theory_content TEXT,
     teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     status VARCHAR(50) DEFAULT 'draft',
     "order" INTEGER DEFAULT 0,
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS exercises (
     module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT,
+    theory_content TEXT,
     instructions TEXT,
     difficulty INTEGER CHECK (difficulty >= 1 AND difficulty <= 5),
     points INTEGER DEFAULT 100,
@@ -161,3 +163,45 @@ GROUP BY u.id, u.email, u.full_name;
 
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO robolearn_user;
 -- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO robolearn_user;
+
+-- ============================================
+-- Challenges Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS challenges (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    instructions TEXT,
+    difficulty INTEGER CHECK (difficulty >= 1 AND difficulty <= 5),
+    points INTEGER DEFAULT 100,
+    teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_challenges_teacher_id ON challenges(teacher_id);
+
+-- ============================================
+-- Achievements Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS achievements (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    icon VARCHAR(255),
+    points INTEGER DEFAULT 0,
+    criteria JSONB
+);
+
+CREATE TABLE IF NOT EXISTS user_achievements (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    achievement_id INTEGER NOT NULL REFERENCES achievements(id) ON DELETE CASCADE,
+    earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, achievement_id)
+);
+
+CREATE INDEX idx_user_achievements_user_id ON user_achievements(user_id);
+

@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { InteractiveExercise } from "@/components/interactive/InteractiveExercise"
+import { useState, useEffect } from "react"
 import {
   BarChart,
   Bar,
@@ -35,8 +36,30 @@ interface StudentDashboardProps {
 }
 
 export function StudentDashboard({ user }: StudentDashboardProps) {
-  // Mock data for demonstration
-  const progress = {
+  const [dashboardData, setDashboardData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/dashboard/student`, {
+          credentials: "include"
+        })
+        const data = await res.json()
+        if (data.success) {
+          setDashboardData(data.dashboard)
+        }
+      } catch (e) {
+        console.error("Error fetching student dashboard:", e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchDashboard()
+  }, [])
+
+  // Mock data as fallback
+  const progress = dashboardData?.progress || {
     completedLessons: 8,
     totalLessons: 24,
     currentModule: "Variables y Tipos de Datos",
@@ -63,7 +86,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     { type: "challenge", title: "Reto: Maestro de Variables", reward: "50 pts", link: "/dashboard/challenges" },
   ]
 
-  const weeklyActivityData = [
+  const weeklyActivityData = dashboardData?.weeklyActivity || [
     { day: "Lun", puntos: 120 },
     { day: "Mar", puntos: 250 },
     { day: "Mié", puntos: 180 },
@@ -85,7 +108,11 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     { type: "achievement", title: "¡Racha de 3 días!", time: "Ayer", points: 50 },
   ]
 
-  const progressPercent = Math.round((progress.completedLessons / progress.totalLessons) * 100)
+  const progressPercent = progress.totalLessons > 0 ? Math.round((progress.completedLessons / progress.totalLessons) * 100) : 0
+
+  if (loading) {
+    return <div className="flex h-[400px] items-center justify-center">Cargando...</div>
+  }
 
   return (
     <div className="space-y-6">
@@ -430,7 +457,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               <CardTitle className="text-base">Logros Recientes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {recentAchievements.map((achievement, index) => (
+              {(dashboardData?.recentAchievements || recentAchievements).map((achievement: any, index: number) => (
                 <div key={index} className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-500/10">
                     <Star className="h-5 w-5 text-yellow-500" />

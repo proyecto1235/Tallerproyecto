@@ -593,6 +593,60 @@ async def get_module(module_id: int):
     
     return {"success": True, "module": module.to_dict()}
 
+@app.get("/api/modules/{module_id}/exercises", tags=["Modules"])
+async def get_module_exercises(module_id: int):
+    """Get exercises for a module"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT id, module_id, title, description, theory_content, instructions, difficulty, points, "order"
+        FROM exercises WHERE module_id = %s ORDER BY "order" ASC
+    """
+    exercises = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (module_id,))
+        rows = cursor.fetchall()
+        for row in rows:
+            exercises.append({
+                "id": row[0],
+                "module_id": row[1],
+                "title": row[2],
+                "description": row[3],
+                "theory_content": row[4],
+                "instructions": row[5],
+                "difficulty": row[6],
+                "points": row[7],
+                "order": row[8]
+            })
+    return {"success": True, "exercises": exercises}
+
+@app.get("/api/exercises", tags=["Exercises"])
+async def get_all_exercises():
+    """Get all exercises without theory content"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT e.id, e.module_id, e.title, e.description, e.instructions, e.difficulty, e.points, m.title as module_title
+        FROM exercises e
+        JOIN modules m ON e.module_id = m.id
+        WHERE m.is_published = TRUE
+        ORDER BY m."order", e."order" ASC
+    """
+    exercises = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        for row in rows:
+            exercises.append({
+                "id": row[0],
+                "module_id": row[1],
+                "title": row[2],
+                "description": row[3],
+                "instructions": row[4],
+                "difficulty": row[5],
+                "points": row[6],
+                "module_title": row[7]
+            })
+    return {"success": True, "exercises": exercises}
+
 @app.post("/api/modules", tags=["Modules"])
 async def create_module(
     request: ModuleCreate,
@@ -841,6 +895,163 @@ async def reject_module_deletion(module_id: int, token_data: TokenData = Depends
     await module_repository.update(module)
     
     return {"success": True, "message": "Module deletion rejected, set to draft"}
+
+# ============================================
+# Routes - Dashboards (Student, Admin, Challenges)
+# ============================================
+
+@app.get("/api/dashboard/student", tags=["Student"])
+async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
+    """Get student dashboard data"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    
+    # 1. Progress Stats
+    query_progress = """
+        SELECT 
+            COUNT(DISTINCT e.id) as total_modules,
+            COUNT(DISTINCT CASE WHEN e.status = 'completed' THEN e.id END) as completed_modules
+        FROM enrollments e
+        WHERE e.student_id = %s
+    """
+    
+    # 2. Recent Achievements
+    query_achievements = """
+        SELECT a.name, a.icon, ua.earned_at
+        FROM user_achievements ua
+        JOIN achievements a ON ua.achievement_id = a.id
+        WHERE ua.user_id = %s
+        ORDER BY ua.earned_at DESC
+        LIMIT 3
+    """
+    
+    # 3. Weekly Activity (Mocked for now since event_repository in mongo is complex to aggregate here)
+    weekly_activity = [
+        {"day": "Lun", "puntos": 0},
+        {"day": "Mar", "puntos": 0},
+        {"day": "Mié", "puntos": 0},
+        {"day": "Jue", "puntos": 0},
+        {"day": "Vie", "puntos": 0},
+        {"day": "Sáb", "puntos": 0},
+        {"day": "Dom", "puntos": 0},
+    ]
+
+    progress = {"completedLessons": 0, "totalLessons": 0, "currentModule": "Ninguno", "nextLesson": "Ninguno"}
+    recent_achievements = []
+
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query_progress, (token_data.user_id,))
+        prog_row = cursor.fetchone()
+        if prog_row:
+            progress["totalLessons"] = prog_row[0] or 0
+            progress["completedLessons"] = prog_row[1] or 0
+            
+        cursor.execute(query_achievements, (token_data.user_id,))
+        achv_rows = cursor.fetchall()
+        for row in achv_rows:
+            # earned_at is datetime, format as string or "Hace x dias"
+            recent_achievements.append({
+                "name": row[0],
+                "icon": row[1] or "star",
+                "earnedAt": row[2].strftime("%Y-%m-%d") if row[2] else ""
+            })
+            
+    return {
+        "success": True,
+        "dashboard": {
+            "progress": progress,
+            "recentAchievements": recent_achievements,
+            "weeklyActivity": weekly_activity
+        }
+    }
+
+@app.get("/api/dashboard/admin", tags=["Admin"])
+async def get_admin_dashboard(token_data: TokenData = Depends(verify_admin)):
+    """Get admin dashboard stats"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    
+    stats = {"totalUsers": 0, "activeStudents": 0, "activeTeachers": 0, "totalModules": 0}
+    
+    query = """
+        SELECT
+            (SELECT COUNT(*) FROM users) as total_users,
+            (SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = TRUE) as active_students,
+            (SELECT COUNT(*) FROM users WHERE role = 'teacher' AND is_active = TRUE) as active_teachers,
+            (SELECT COUNT(*) FROM modules) as total_modules
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query)
+        row = cursor.fetchone()
+        if row:
+            stats["totalUsers"] = row[0]
+            stats["activeStudents"] = row[1]
+            stats["activeTeachers"] = row[2]
+            stats["totalModules"] = row[3]
+            
+    return {"success": True, "stats": stats}
+
+@app.get("/api/challenges", tags=["Challenges"])
+async def list_challenges(token_data: TokenData = Depends(verify_token)):
+    """Get all challenges"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    
+    query = """
+        SELECT c.id, c.title, c.description, c.difficulty, c.points, u.full_name as author_name
+        FROM challenges c
+        JOIN users u ON c.teacher_id = u.id
+        ORDER BY c.created_at DESC
+    """
+    
+    challenges = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        for row in rows:
+            challenges.append({
+                "id": row[0],
+                "title": row[1],
+                "description": row[2],
+                "difficulty": row[3],
+                "points": row[4],
+                "author_name": row[5]
+            })
+            
+    return {"success": True, "challenges": challenges}
+
+@app.post("/api/challenges", tags=["Challenges"])
+async def create_challenge(request: Request, token_data: TokenData = Depends(verify_teacher)):
+    """Create a new challenge"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    
+    body = await request.json()
+    title = body.get("title")
+    description = body.get("description")
+    instructions = body.get("instructions")
+    difficulty = body.get("difficulty", 1)
+    points = body.get("points", 100)
+    
+    query = """
+        INSERT INTO challenges (title, description, instructions, difficulty, points, teacher_id)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (title, description, instructions, difficulty, points, token_data.user_id))
+        challenge_id = cursor.fetchone()[0]
+        
+    return {"success": True, "challenge_id": challenge_id}
+
+@app.post("/api/classes/{class_id}/unenroll/{student_id}", tags=["Teacher"])
+async def unenroll_student(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Unenroll a student from a class/module"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    
+    query = "DELETE FROM enrollments WHERE module_id = %s AND student_id = %s"
+    
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id, student_id))
+        
+    return {"success": True, "message": "Student unenrolled"}
 
 # ============================================
 # Error Handlers

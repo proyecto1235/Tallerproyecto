@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # PostgreSQL
     postgres_user: str = "postgres"
-    postgres_password: str = "72120490"
+    postgres_password: str = "123123123"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "robolearn"

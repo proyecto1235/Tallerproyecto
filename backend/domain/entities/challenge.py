@@ -1,36 +1,26 @@
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
-from enum import Enum
 
-class ContentStatus(str, Enum):
-    DRAFT = "draft"
-    PENDING_REVIEW = "pending_review"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    PENDING_DELETION = "pending_deletion"
-
-class Module:
+class Challenge:
     def __init__(
         self,
         id: Optional[int],
         title: str,
         description: str,
+        instructions: str,
         teacher_id: int,
-        theory_content: Optional[str] = None,
-        status: ContentStatus = ContentStatus.DRAFT,
-        order: int = 0,
-        is_published: bool = False,
+        difficulty: int = 1,
+        points: int = 100,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
     ):
         self.id = id
         self.title = title
         self.description = description
-        self.theory_content = theory_content
+        self.instructions = instructions
         self.teacher_id = teacher_id
-        self.status = status
-        self.order = order
-        self.is_published = is_published
+        self.difficulty = difficulty
+        self.points = points
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 
@@ -39,11 +29,10 @@ class Module:
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "theory_content": self.theory_content,
+            "instructions": self.instructions,
             "teacher_id": self.teacher_id,
-            "status": self.status.value,
-            "order": self.order,
-            "is_published": self.is_published,
+            "difficulty": self.difficulty,
+            "points": self.points,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -27,16 +28,40 @@ interface AdminDashboardProps {
 }
 
 export function AdminDashboard({ user }: AdminDashboardProps) {
-  // Mock data
-  const stats = {
-    totalUsers: 156,
-    students: 142,
-    teachers: 12,
-    admins: 2,
-    pendingTeacherRequests: 8,
-    pendingContent: 5,
-  }
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    students: 0,
+    teachers: 0,
+    admins: 0,
+    pendingTeacherRequests: 0,
+    pendingContent: 0,
+  })
+  const [loading, setLoading] = useState(true)
 
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/dashboard/admin", {
+          credentials: "include"
+        })
+        const data = await res.json()
+        if (data.success && data.stats) {
+          setStats(prev => ({
+            ...prev,
+            totalUsers: data.stats.totalUsers,
+            students: data.stats.activeStudents,
+            teachers: data.stats.activeTeachers,
+            totalModules: data.stats.totalModules
+          }))
+        }
+      } catch (error) {
+        console.error("Error fetching admin stats", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchStats()
+  }, [])
   const teacherRequests = [
     { id: 1, name: "Laura Fernandez", email: "laura@email.com", date: "Hace 2 dias" },
     { id: 2, name: "Miguel Torres", email: "miguel@email.com", date: "Hace 3 dias" },
@@ -60,6 +85,10 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     { id: 1, title: "Ejercicio: Bucles anidados", type: "Ejercicio", author: "Prof. Garcia" },
     { id: 2, title: "Leccion: Funciones recursivas", type: "Leccion", author: "IA" },
   ]
+
+  if (loading) {
+    return <div className="flex h-[400px] items-center justify-center">Cargando panel de administración...</div>
+  }
 
   return (
     <div className="space-y-6">

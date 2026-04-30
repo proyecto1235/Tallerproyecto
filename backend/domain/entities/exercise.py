@@ -9,6 +9,7 @@ class Exercise:
         title: str,
         description: str,
         instructions: str,
+        theory_content: Optional[str] = None,
         difficulty: int = 1,
         points: int = 100,
         order: int = 0,
@@ -21,6 +22,7 @@ class Exercise:
         self.title = title
         self.description = description
         self.instructions = instructions
+        self.theory_content = theory_content
         self.difficulty = difficulty
         self.points = points
         self.order = order
@@ -35,6 +37,7 @@ class Exercise:
             "title": self.title,
             "description": self.description,
             "instructions": self.instructions,
+            "theory_content": self.theory_content,
             "difficulty": self.difficulty,
             "points": self.points,
             "order": self.order,

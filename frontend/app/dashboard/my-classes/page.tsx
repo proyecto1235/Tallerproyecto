@@ -1,85 +1,99 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Search, Clock, Users, Star, PlayCircle } from "lucide-react"
-import Image from "next/image"
-
+import { BookOpen, Search, Clock, Users, Star, PlayCircle, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 export default function MyClassesPage() {
   const [filter, setFilter] = useState("Todas")
-  const [enrolledClasses, setEnrolledClasses] = useState<string[]>(["cls1", "cls4"])
+  const [classes, setClasses] = useState<any[]>([])
+  const [enrolledClasses, setEnrolledClasses] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
+
+  useEffect(() => {
+    const fetchModules = async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/api/modules/search?q=${searchQuery}`, {
+          credentials: 'include'
+        })
+        const data = await res.json()
+        if (data.success) {
+          const formatted = data.results.map((m: any) => ({
+            id: m.id.toString(),
+            title: m.title,
+            instructor: m.teacher_name,
+            category: "General", // Placeholder
+            level: "Básico",
+            duration: "N/A",
+            students: 0,
+            rating: 5.0,
+            progress: 0,
+            imageColor: "from-blue-500 to-cyan-500"
+          }))
+          setClasses(formatted)
+        }
+        
+        // Also fetch enrolled classes to determine status
+        const enrRes = await fetch("http://localhost:8000/api/modules/enrolled", {
+          credentials: 'include'
+        })
+        const enrData = await enrRes.json()
+        if (enrData.success) {
+          setEnrolledClasses(enrData.modules.map((m: any) => m.id.toString()))
+          
+          // Map progress from enrollments to classes
+          setClasses(prev => prev.map(c => {
+            const enr = enrData.modules.find((m: any) => m.id.toString() === c.id)
+            if (enr) {
+              return { ...c, progress: enr.enrollment_status === 'completed' ? 100 : 45 }
+            }
+            return c
+          }))
+        }
+      } catch (error) {
+        console.error("Error fetching classes", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchModules()
+  }, [searchQuery])
 
   const categories = ["Todas", "Python", "Robótica", "Web", "Juegos"]
 
-  const classes = [
-    {
-      id: "cls1",
-      title: "Introducción a Python",
-      instructor: "Prof. Alberto",
-      category: "Python",
-      level: "Básico",
-      duration: "4 semanas",
-      students: 120,
-      rating: 4.8,
-      progress: 60,
-      imageColor: "from-blue-500 to-cyan-500"
-    },
-    {
-      id: "cls2",
-      title: "Construye tu primer Robot",
-      instructor: "Profa. Marta",
-      category: "Robótica",
-      level: "Intermedio",
-      duration: "6 semanas",
-      students: 85,
-      rating: 4.9,
-      progress: 0,
-      imageColor: "from-orange-500 to-red-500"
-    },
-    {
-      id: "cls3",
-      title: "Crea Juegos 2D con Pygame",
-      instructor: "Prof. Alberto",
-      category: "Juegos",
-      level: "Intermedio",
-      duration: "8 semanas",
-      students: 200,
-      rating: 4.7,
-      progress: 10,
-      imageColor: "from-purple-500 to-pink-500"
-    },
-    {
-      id: "cls4",
-      title: "HTML y CSS Mágico",
-      instructor: "Profa. Lucía",
-      category: "Web",
-      level: "Básico",
-      duration: "3 semanas",
-      students: 150,
-      rating: 4.6,
-      progress: 100,
-      imageColor: "from-emerald-500 to-teal-500"
-    }
-  ]
 
-  const filteredClasses = filter === "Todas" 
-    ? classes 
-    : classes.filter(c => c.category === filter)
 
-  const handleEnrollment = (id: string, isEnrolled: boolean) => {
+  const handleEnrollment = async (id: string, isEnrolled: boolean) => {
     if (isEnrolled) {
-      router.push('/dashboard/modules')
+      router.push(`/dashboard/modules/${id}`)
     } else {
-      setEnrolledClasses(prev => [...prev, id])
-      toast.success("¡Te has inscrito correctamente!")
+      try {
+        const res = await fetch(`http://localhost:8000/api/modules/${id}/enroll`, {
+          method: "POST",
+          credentials: 'include'
+        })
+        const data = await res.json()
+        if (data.success) {
+          setEnrolledClasses(prev => [...prev, id])
+          toast.success("¡Te has inscrito correctamente!")
+        } else {
+          toast.error("Error al inscribirse: " + data.error)
+        }
+      } catch (error) {
+        toast.error("Error de red al inscribirse")
+      }
     }
+  }
+
+  if (loading) {
+    return <div className="flex h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
   }
 
   return (
@@ -98,7 +112,12 @@ export default function MyClassesPage() {
       <div className="flex flex-col sm:flex-row justify-between gap-4 items-center bg-card p-4 rounded-xl border neo-shadow">
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar clases..." className="pl-9" />
+          <Input 
+            placeholder="Buscar clases..." 
+            className="pl-9" 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {categories.map(cat => (
@@ -117,7 +136,7 @@ export default function MyClassesPage() {
 
       {/* Grid de Clases */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {filteredClasses.map(cls => (
+        {classes.map(cls => (
           <Card key={cls.id} className="overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-primary/10 group flex flex-col">
             <div className={`h-32 bg-gradient-to-br ${cls.imageColor} relative flex items-center justify-center`}>
               <PlayCircle className="w-12 h-12 text-white/50 group-hover:text-white/90 transition-colors" />
@@ -176,7 +195,7 @@ export default function MyClassesPage() {
         ))}
       </div>
       
-      {filteredClasses.length === 0 && (
+      {classes.length === 0 && (
         <div className="text-center py-20">
           <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-muted-foreground">No hay clases en esta categoría</h3>
