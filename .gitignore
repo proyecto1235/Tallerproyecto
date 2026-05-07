@@ -92,6 +92,7 @@ models/
 *.joblib
 credentials.json
 google-credentials.json
+backend/robolearn-key.json
 logs/
 *.log
 
