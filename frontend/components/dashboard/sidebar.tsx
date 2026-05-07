@@ -47,15 +47,16 @@ const teacherLinks = [
   { href: "/dashboard/students", label: "Estudiantes", icon: GraduationCap },
   { href: "/dashboard/metrics", label: "Metricas", icon: BarChart3 },
   { href: "/dashboard/alerts", label: "Alertas IA", icon: Bell },
-  { href: "/dashboard/content", label: "Contenido", icon: FileText },
   { href: "/dashboard/challenges", label: "Retos", icon: Trophy },
+  { href: "/dashboard/settings", label: "Ajustes", icon: Settings },
 ]
 
 const adminLinks = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard },
   { href: "/dashboard/users", label: "Usuarios", icon: Users },
   { href: "/dashboard/teacher-requests", label: "Solicitudes", icon: UserCheck },
-  { href: "/dashboard/content-review", label: "Contenido", icon: FileText },
+  { href: "/dashboard/modules", label: "Módulos Globales", icon: BookOpen },
+  { href: "/dashboard/content-review", label: "Revisión", icon: FileText },
   { href: "/dashboard/audit", label: "Auditoría", icon: Shield },
   { href: "/dashboard/settings", label: "Ajustes", icon: Settings },
 ]

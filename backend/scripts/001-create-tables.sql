@@ -205,3 +205,101 @@ CREATE TABLE IF NOT EXISTS user_achievements (
 
 CREATE INDEX idx_user_achievements_user_id ON user_achievements(user_id);
 
+-- ============================================
+-- Lessons Table (for global module lessons)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS lessons (
+    id SERIAL PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    theory_content TEXT,
+    "order" INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_lessons_module_id ON lessons(module_id);
+
+-- ============================================
+-- Classes Table (teacher-created courses)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS classes (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(100),
+    difficulty VARCHAR(50),
+    teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cover_image VARCHAR(500),
+    is_published BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_classes_teacher_id ON classes(teacher_id);
+
+-- ============================================
+-- Class Modules Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS class_modules (
+    id SERIAL PRIMARY KEY,
+    class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    theory_content TEXT,
+    "order" INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_class_modules_class_id ON class_modules(class_id);
+
+-- ============================================
+-- Class Exercises Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS class_exercises (
+    id SERIAL PRIMARY KEY,
+    class_module_id INTEGER NOT NULL REFERENCES class_modules(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    instructions TEXT,
+    exercise_type VARCHAR(50) DEFAULT 'coding',
+    difficulty INTEGER DEFAULT 1,
+    points INTEGER DEFAULT 10,
+    "order" INTEGER DEFAULT 0,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_class_exercises_module ON class_exercises(class_module_id);
+
+-- ============================================
+-- Class Enrollments (with teacher approval)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS class_enrollments (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    status VARCHAR(50) DEFAULT 'pending',
+    enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    UNIQUE(student_id, class_id),
+    CONSTRAINT valid_ce_status CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn'))
+);
+
+CREATE INDEX idx_ce_student_id ON class_enrollments(student_id);
+CREATE INDEX idx_ce_class_id ON class_enrollments(class_id);
+
+-- ============================================
+-- Global modules flag on modules table
+-- ============================================
+
+ALTER TABLE modules ADD COLUMN IF NOT EXISTS is_global BOOLEAN DEFAULT FALSE;
+ALTER TABLE modules ADD COLUMN IF NOT EXISTS difficulty VARCHAR(50) DEFAULT 'Principiante';
+ALTER TABLE modules ADD COLUMN IF NOT EXISTS lesson_count INTEGER DEFAULT 0;
+

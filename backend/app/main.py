@@ -57,6 +57,11 @@ class LoginRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
 
+class PublicChatRequest(BaseModel):
+    message: str
+    session_id: str
+    history: Optional[list] = []
+
 class ModuleCreate(BaseModel):
     title: str
     description: str
@@ -79,6 +84,53 @@ class ProfileUpdate(BaseModel):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
 
+# Classes Models
+class ClassCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    difficulty: Optional[str] = None
+    is_published: bool = False
+
+class ClassUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    difficulty: Optional[str] = None
+    is_published: Optional[bool] = None
+
+class ClassModuleCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    theory_content: Optional[str] = None
+    order: int = 0
+
+class ClassModuleUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    theory_content: Optional[str] = None
+    order: Optional[int] = None
+
+class ClassExerciseCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+    exercise_type: str = "coding"
+    difficulty: int = 1
+    points: int = 10
+    order: int = 0
+    metadata: Optional[dict] = None
+
+class ClassExerciseUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+    exercise_type: Optional[str] = None
+    difficulty: Optional[int] = None
+    points: Optional[int] = None
+    order: Optional[int] = None
+    metadata: Optional[dict] = None
+
 class UserRoleUpdate(BaseModel):
     role: str
 
@@ -90,6 +142,15 @@ class UserRoleUpdate(BaseModel):
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting Robolearn API...")
+    
+    # Set Google credentials for Dialogflow if configured
+    if settings.google_credentials_path:
+        cred_path = os.path.abspath(settings.google_credentials_path)
+        if os.path.exists(cred_path):
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+            print(f"✅ Google credentials loaded from: {cred_path}")
+        else:
+            print(f"⚠️ Google credentials file not found at: {cred_path}")
     
     # Initialize database (create if needed, migrate tables, seed data)
     initialize_database()
@@ -452,6 +513,13 @@ async def predict_performance(
 # Routes - Chatbot (Dialogflow)
 # ============================================
 
+@app.post("/api/chatbot/public", tags=["Chatbot"])
+async def chat_public(request: PublicChatRequest):
+    """Chat with Dialogflow agent (no auth required, for anonymous users)"""
+    session_id = request.session_id or f"anon_{datetime.now(timezone.utc).timestamp()}"
+    response = await ai_service.chat_with_dialogflow(session_id, request.message)
+    return {"success": True, "message": response, "session_id": session_id}
+
 @app.post("/api/chatbot", tags=["Chatbot"])
 async def chat(
     request: ChatRequest,
@@ -527,12 +595,30 @@ async def execute_code(
 
 @app.get("/api/modules", tags=["Modules"])
 async def list_modules():
-    """List all published modules"""
-    modules = await module_repository.list_published()
-    return {
-        "success": True,
-        "modules": [m.to_dict() for m in modules]
-    }
+    """List all published modules (including global)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT m.id, m.title, m.description, m.theory_content, m.teacher_id,
+               m.status, m."order", m.is_published, m.is_global, m.difficulty, m.lesson_count,
+               m.created_at, u.full_name as teacher_name
+        FROM modules m
+        LEFT JOIN users u ON m.teacher_id = u.id
+        WHERE m.is_published = TRUE AND m.status = 'approved'
+        ORDER BY m."order" ASC
+    """
+    modules = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query)
+        for row in cursor.fetchall():
+            modules.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "theory_content": row[3], "teacher_id": row[4],
+                "status": row[5], "order": row[6], "is_published": row[7],
+                "is_global": row[8], "difficulty": row[9], "lesson_count": row[10],
+                "created_at": row[11].isoformat() if row[11] else None,
+                "teacher_name": row[12]
+            })
+    return {"success": True, "modules": modules}
 
 @app.get("/api/modules/search", tags=["Modules"])
 async def search_modules(q: str = "", token_data: TokenData = Depends(verify_token)):
@@ -1052,6 +1138,420 @@ async def unenroll_student(class_id: int, student_id: int, token_data: TokenData
         cursor.execute(query, (class_id, student_id))
         
     return {"success": True, "message": "Student unenrolled"}
+
+# ============================================
+# Routes - Classes System
+# ============================================
+
+# --- Classes CRUD ---
+
+@app.get("/api/classes", tags=["Classes"])
+async def list_classes():
+    """List all published classes"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT c.id, c.title, c.description, c.category, c.difficulty, 
+               c.teacher_id, c.is_published, c.created_at,
+               u.full_name as teacher_name,
+               COUNT(DISTINCT cm.id) as module_count,
+               COUNT(DISTINCT ce.id) as student_count
+        FROM classes c
+        JOIN users u ON c.teacher_id = u.id
+        LEFT JOIN class_modules cm ON cm.class_id = c.id
+        LEFT JOIN class_enrollments ce ON ce.class_id = c.id AND ce.status = 'approved'
+        WHERE c.is_published = TRUE
+        GROUP BY c.id, u.full_name
+        ORDER BY c.created_at DESC
+    """
+    classes = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query)
+        for row in cursor.fetchall():
+            classes.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "category": row[3], "difficulty": row[4], "teacher_id": row[5],
+                "is_published": row[6], "created_at": row[7].isoformat() if row[7] else None,
+                "teacher_name": row[8], "module_count": row[9], "student_count": row[10]
+            })
+    return {"success": True, "classes": classes}
+
+@app.get("/api/classes/my-classes", tags=["Classes"])
+async def get_my_classes(token_data: TokenData = Depends(verify_teacher)):
+    """Get teacher's own classes"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT c.id, c.title, c.description, c.category, c.difficulty, 
+               c.teacher_id, c.is_published, c.created_at,
+               COUNT(DISTINCT cm.id) as module_count,
+               COUNT(DISTINCT ce.id) as student_count
+        FROM classes c
+        LEFT JOIN class_modules cm ON cm.class_id = c.id
+        LEFT JOIN class_enrollments ce ON ce.class_id = c.id AND ce.status = 'approved'
+        WHERE c.teacher_id = %s
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
+    """
+    classes = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (token_data.user_id,))
+        for row in cursor.fetchall():
+            classes.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "category": row[3], "difficulty": row[4], "teacher_id": row[5],
+                "is_published": row[6], "created_at": row[7].isoformat() if row[7] else None,
+                "module_count": row[8], "student_count": row[9]
+            })
+    return {"success": True, "classes": classes}
+
+@app.get("/api/classes/{class_id}", tags=["Classes"])
+async def get_class(class_id: int):
+    """Get class by ID with modules"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query_class = """
+        SELECT c.id, c.title, c.description, c.category, c.difficulty, 
+               c.teacher_id, c.is_published, c.created_at, u.full_name as teacher_name
+        FROM classes c
+        JOIN users u ON c.teacher_id = u.id
+        WHERE c.id = %s
+    """
+    query_modules = """
+        SELECT cm.id, cm.title, cm.description, cm.theory_content, cm."order", cm.created_at,
+               COUNT(DISTINCT ce.id) as exercise_count
+        FROM class_modules cm
+        LEFT JOIN class_exercises ce ON ce.class_module_id = cm.id
+        WHERE cm.class_id = %s
+        GROUP BY cm.id
+        ORDER BY cm."order" ASC
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query_class, (class_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Class not found")
+        cls = {
+            "id": row[0], "title": row[1], "description": row[2],
+            "category": row[3], "difficulty": row[4], "teacher_id": row[5],
+            "is_published": row[6], "created_at": row[7].isoformat() if row[7] else None,
+            "teacher_name": row[8]
+        }
+        cursor.execute(query_modules, (class_id,))
+        modules = []
+        for mrow in cursor.fetchall():
+            modules.append({
+                "id": mrow[0], "title": mrow[1], "description": mrow[2],
+                "theory_content": mrow[3], "order": mrow[4],
+                "created_at": mrow[5].isoformat() if mrow[5] else None,
+                "exercise_count": mrow[6]
+            })
+        cls["modules"] = modules
+    return {"success": True, "class": cls}
+
+@app.post("/api/classes", tags=["Classes"])
+async def create_class(request: ClassCreate, token_data: TokenData = Depends(verify_teacher)):
+    """Create a new class"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        INSERT INTO classes (title, description, category, difficulty, teacher_id, is_published)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (request.title, request.description, request.category,
+                               request.difficulty, token_data.user_id, request.is_published))
+        class_id = cursor.fetchone()[0]
+    return {"success": True, "class_id": class_id}
+
+@app.put("/api/classes/{class_id}", tags=["Classes"])
+async def update_class(class_id: int, request: ClassUpdate, token_data: TokenData = Depends(verify_teacher)):
+    """Update a class"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    fields = []
+    values = []
+    if request.title is not None:
+        fields.append("title = %s"); values.append(request.title)
+    if request.description is not None:
+        fields.append("description = %s"); values.append(request.description)
+    if request.category is not None:
+        fields.append("category = %s"); values.append(request.category)
+    if request.difficulty is not None:
+        fields.append("difficulty = %s"); values.append(request.difficulty)
+    if request.is_published is not None:
+        fields.append("is_published = %s"); values.append(request.is_published)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    fields.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(class_id)
+    query = f"UPDATE classes SET {', '.join(fields)} WHERE id = %s AND teacher_id = %s"
+    values.append(token_data.user_id)
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, tuple(values))
+    return {"success": True, "message": "Class updated"}
+
+@app.delete("/api/classes/{class_id}", tags=["Classes"])
+async def delete_class(class_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Delete a class"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = "DELETE FROM classes WHERE id = %s AND teacher_id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id, token_data.user_id))
+    return {"success": True, "message": "Class deleted"}
+
+# --- Class Enrollment ---
+
+@app.post("/api/classes/{class_id}/enroll", tags=["Classes"])
+async def enroll_class(class_id: int, token_data: TokenData = Depends(verify_token)):
+    """Request enrollment in a class"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        INSERT INTO class_enrollments (student_id, class_id, status)
+        VALUES (%s, %s, 'pending')
+        ON CONFLICT (student_id, class_id) DO UPDATE SET status = 'pending'
+        RETURNING id
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (token_data.user_id, class_id))
+        enrollment_id = cursor.fetchone()[0]
+    return {"success": True, "enrollment_id": enrollment_id, "status": "pending"}
+
+@app.get("/api/classes/{class_id}/requests", tags=["Classes"])
+async def get_enrollment_requests(class_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Get pending enrollment requests for a class (teacher only)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT ce.id, ce.student_id, ce.status, ce.enrolled_at,
+               u.full_name, u.email
+        FROM class_enrollments ce
+        JOIN users u ON ce.student_id = u.id
+        JOIN classes c ON ce.class_id = c.id
+        WHERE ce.class_id = %s AND c.teacher_id = %s
+        ORDER BY ce.enrolled_at DESC
+    """
+    requests = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id, token_data.user_id))
+        for row in cursor.fetchall():
+            requests.append({
+                "id": row[0], "student_id": row[1], "status": row[2],
+                "enrolled_at": row[3].isoformat() if row[3] else None,
+                "student_name": row[4], "student_email": row[5]
+            })
+    return {"success": True, "requests": requests}
+
+@app.post("/api/classes/{class_id}/approve/{student_id}", tags=["Classes"])
+async def approve_enrollment(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Approve a student's enrollment request"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        UPDATE class_enrollments
+        SET status = 'approved', approved_at = CURRENT_TIMESTAMP
+        WHERE class_id = %s AND student_id = %s
+        AND class_id IN (SELECT id FROM classes WHERE teacher_id = %s)
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id, student_id, token_data.user_id))
+    return {"success": True, "message": "Enrollment approved"}
+
+@app.post("/api/classes/{class_id}/reject/{student_id}", tags=["Classes"])
+async def reject_enrollment(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Reject a student's enrollment request"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        UPDATE class_enrollments
+        SET status = 'rejected'
+        WHERE class_id = %s AND student_id = %s
+        AND class_id IN (SELECT id FROM classes WHERE teacher_id = %s)
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id, student_id, token_data.user_id))
+    return {"success": True, "message": "Enrollment rejected"}
+
+@app.get("/api/classes/enrolled", tags=["Classes"])
+async def get_enrolled_classes(token_data: TokenData = Depends(verify_token)):
+    """Get classes the student is enrolled in (approved only)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT c.id, c.title, c.description, c.category, c.difficulty,
+               c.teacher_id, u.full_name as teacher_name,
+               ce.status as enrollment_status, ce.enrolled_at, ce.approved_at
+        FROM class_enrollments ce
+        JOIN classes c ON ce.class_id = c.id
+        JOIN users u ON c.teacher_id = u.id
+        WHERE ce.student_id = %s AND ce.status = 'approved'
+        ORDER BY ce.enrolled_at DESC
+    """
+    classes = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (token_data.user_id,))
+        for row in cursor.fetchall():
+            classes.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "category": row[3], "difficulty": row[4], "teacher_id": row[5],
+                "teacher_name": row[6], "enrollment_status": row[7],
+                "enrolled_at": row[8].isoformat() if row[8] else None,
+                "approved_at": row[9].isoformat() if row[9] else None
+            })
+    return {"success": True, "classes": classes}
+
+# --- Class Modules CRUD ---
+
+@app.get("/api/classes/{class_id}/modules", tags=["Classes"])
+async def list_class_modules(class_id: int):
+    """List modules in a class"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT cm.id, cm.title, cm.description, cm.theory_content, cm."order",
+               COUNT(DISTINCT ce.id) as exercise_count
+        FROM class_modules cm
+        LEFT JOIN class_exercises ce ON ce.class_module_id = cm.id
+        WHERE cm.class_id = %s
+        GROUP BY cm.id
+        ORDER BY cm."order" ASC
+    """
+    modules = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id,))
+        for row in cursor.fetchall():
+            modules.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "theory_content": row[3], "order": row[4], "exercise_count": row[5]
+            })
+    return {"success": True, "modules": modules}
+
+@app.post("/api/classes/{class_id}/modules", tags=["Classes"])
+async def create_class_module(class_id: int, request: ClassModuleCreate, token_data: TokenData = Depends(verify_teacher)):
+    """Create a module in a class"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        INSERT INTO class_modules (class_id, title, description, theory_content, "order")
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (class_id, request.title, request.description, request.theory_content, request.order))
+        module_id = cursor.fetchone()[0]
+    return {"success": True, "module_id": module_id}
+
+@app.put("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
+async def update_class_module(class_id: int, module_id: int, request: ClassModuleUpdate, token_data: TokenData = Depends(verify_teacher)):
+    """Update a class module"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    fields = []
+    values = []
+    if request.title is not None:
+        fields.append("title = %s"); values.append(request.title)
+    if request.description is not None:
+        fields.append("description = %s"); values.append(request.description)
+    if request.theory_content is not None:
+        fields.append("theory_content = %s"); values.append(request.theory_content)
+    if request.order is not None:
+        fields.append('"order" = %s'); values.append(request.order)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    fields.append("updated_at = CURRENT_TIMESTAMP")
+    values.extend([module_id, class_id])
+    query = f"UPDATE class_modules SET {', '.join(fields)} WHERE id = %s AND class_id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, tuple(values))
+    return {"success": True, "message": "Module updated"}
+
+@app.delete("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
+async def delete_class_module(class_id: int, module_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Delete a class module"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = "DELETE FROM class_modules WHERE id = %s AND class_id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (module_id, class_id))
+    return {"success": True, "message": "Module deleted"}
+
+# --- Class Exercises CRUD ---
+
+@app.get("/api/classes/{class_id}/modules/{module_id}/exercises", tags=["Classes"])
+async def list_class_exercises(class_id: int, module_id: int):
+    """List exercises for a class module"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT ce.id, ce.title, ce.description, ce.instructions, ce.exercise_type,
+               ce.difficulty, ce.points, ce."order", ce.metadata
+        FROM class_exercises ce
+        JOIN class_modules cm ON ce.class_module_id = cm.id
+        WHERE cm.id = %s AND cm.class_id = %s
+        ORDER BY ce."order" ASC
+    """
+    exercises = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (module_id, class_id))
+        for row in cursor.fetchall():
+            exercises.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "instructions": row[3], "exercise_type": row[4],
+                "difficulty": row[5], "points": row[6], "order": row[7],
+                "metadata": row[8]
+            })
+    return {"success": True, "exercises": exercises}
+
+@app.post("/api/classes/{class_id}/modules/{module_id}/exercises", tags=["Classes"])
+async def create_class_exercise(
+    class_id: int, module_id: int, request: ClassExerciseCreate,
+    token_data: TokenData = Depends(verify_teacher)
+):
+    """Create an exercise in a class module"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    import json
+    query = """
+        INSERT INTO class_exercises (class_module_id, title, description, instructions, exercise_type, difficulty, points, "order", metadata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    metadata_json = json.dumps(request.metadata) if request.metadata else '{}'
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (module_id, request.title, request.description, request.instructions,
+                               request.exercise_type, request.difficulty, request.points,
+                               request.order, metadata_json))
+        exercise_id = cursor.fetchone()[0]
+    return {"success": True, "exercise_id": exercise_id}
+
+@app.put("/api/classes/{class_id}/modules/{module_id}/exercises/{exercise_id}", tags=["Classes"])
+async def update_class_exercise(
+    class_id: int, module_id: int, exercise_id: int,
+    request: ClassExerciseUpdate, token_data: TokenData = Depends(verify_teacher)
+):
+    """Update a class exercise"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    import json
+    fields = []; values = []
+    if request.title is not None:
+        fields.append("title = %s"); values.append(request.title)
+    if request.description is not None:
+        fields.append("description = %s"); values.append(request.description)
+    if request.instructions is not None:
+        fields.append("instructions = %s"); values.append(request.instructions)
+    if request.difficulty is not None:
+        fields.append("difficulty = %s"); values.append(request.difficulty)
+    if request.points is not None:
+        fields.append("points = %s"); values.append(request.points)
+    if request.order is not None:
+        fields.append('"order" = %s'); values.append(request.order)
+    if request.metadata is not None:
+        fields.append("metadata = %s"); values.append(json.dumps(request.metadata))
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    values.extend([exercise_id, module_id])
+    query = f"UPDATE class_exercises SET {', '.join(fields)} WHERE id = %s AND class_module_id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, tuple(values))
+    return {"success": True, "message": "Exercise updated"}
+
+@app.delete("/api/classes/{class_id}/modules/{module_id}/exercises/{exercise_id}", tags=["Classes"])
+async def delete_class_exercise(
+    class_id: int, module_id: int, exercise_id: int,
+    token_data: TokenData = Depends(verify_teacher)
+):
+    """Delete a class exercise"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = "DELETE FROM class_exercises WHERE id = %s AND class_module_id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (exercise_id, module_id))
+    return {"success": True, "message": "Exercise deleted"}
 
 # ============================================
 # Error Handlers

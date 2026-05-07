@@ -65,48 +65,58 @@ ON CONFLICT (email) DO NOTHING;
 -- Insert Sample Modules
 -- ============================================
 
-INSERT INTO modules (title, description, teacher_id, status, "order", is_published)
-SELECT 
-    'Introducción a Python',
-    'Aprende los fundamentos de programación con Python. Cubrimos variables, tipos de datos, control de flujo y funciones.',
-    id,
-    'approved',
-    1,
-    TRUE
-FROM users WHERE email = 'teacher@robolearn.com'
+-- ============================================
+-- Insert 10 Global Python Modules (admin-managed, free learning path)
+-- ============================================
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Introducción a Python', 'Conoce el lenguaje, escribe tu primer programa y entiende la sintaxis básica.', 'approved', 1, TRUE, TRUE, 'Principiante', 3
+FROM users WHERE email = 'admin@robolearn.com'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO modules (title, description, teacher_id, status, "order", is_published)
-SELECT 
-    'Programación Orientada a Objetos',
-    'Domina los conceptos de POO: clases, herencia, polimorfismo y encapsulación.',
-    id,
-    'approved',
-    2,
-    TRUE
-FROM users WHERE email = 'teacher@robolearn.com'
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Variables y Tipos de Datos', 'Aprende a almacenar información en variables y a trabajar con números y texto.', 'approved', 2, TRUE, TRUE, 'Principiante', 3
+FROM users WHERE email = 'admin@robolearn.com'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO modules (title, description, teacher_id, status, "order", is_published)
-SELECT 
-    'Web Development con Django',
-    'Crea aplicaciones web completas usando el framework Django.',
-    id,
-    'approved',
-    3,
-    TRUE
-FROM users WHERE email = 'teacher@robolearn.com'
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Estructuras de Control', 'Toma decisiones en tu código con if, elif y else.', 'approved', 3, TRUE, TRUE, 'Intermedio', 2
+FROM users WHERE email = 'admin@robolearn.com'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO modules (title, description, teacher_id, status, "order", is_published)
-SELECT 
-    'Robótica Básica',
-    'Introducción a la robótica educativa. Construye y programa robots.',
-    id,
-    'draft',
-    4,
-    FALSE
-FROM users WHERE email = 'teacher@robolearn.com'
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Bucles y Repeticiones', 'Domina for y while para automatizar tareas repetitivas.', 'approved', 4, TRUE, TRUE, 'Intermedio', 2
+FROM users WHERE email = 'admin@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Funciones', 'Crea bloques de código reutilizables y organiza mejor tus programas.', 'approved', 5, TRUE, TRUE, 'Avanzado', 3
+FROM users WHERE email = 'admin@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Listas y Tuplas', 'Trabaja con colecciones de datos y entiende sus diferencias.', 'approved', 6, TRUE, TRUE, 'Intermedio', 2
+FROM users WHERE email = 'admin@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Diccionarios y Sets', 'Almacena datos con clave-valor y conjuntos sin duplicados.', 'approved', 7, TRUE, TRUE, 'Intermedio', 2
+FROM users WHERE email = 'admin@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Manejo de Archivos', 'Lee y escribe archivos de texto y CSV con Python.', 'approved', 8, TRUE, TRUE, 'Avanzado', 2
+FROM users WHERE email = 'admin@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Módulos y Paquetes', 'Organiza tu código en módulos reutilizables y usa pip.', 'approved', 9, TRUE, TRUE, 'Avanzado', 2
+FROM users WHERE email = 'admin@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO modules (title, description, teacher_id, status, "order", is_published, is_global, difficulty, lesson_count)
+SELECT id, 'Proyecto Final: Robot Autónomo', 'Aplica todo lo aprendido para programar un robot virtual que navega solo.', 'approved', 10, TRUE, TRUE, 'Avanzado', 3
+FROM users WHERE email = 'admin@robolearn.com'
 ON CONFLICT DO NOTHING;
 
 -- ============================================

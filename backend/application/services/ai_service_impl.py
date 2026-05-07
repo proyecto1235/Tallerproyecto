@@ -70,7 +70,7 @@ class AIServiceImpl(AIService):
             client = dialogflow.SessionsClient()
             session_path = client.session_path(self.dialogflow_project, session_id)
             
-            text_input = dialogflow.TextInput(text=user_message)
+            text_input = dialogflow.TextInput(text=user_message, language_code="es")
             query_input = dialogflow.QueryInput(text=text_input)
             
             response = client.detect_intent(
