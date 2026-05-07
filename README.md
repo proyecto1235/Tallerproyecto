@@ -11,6 +11,7 @@ Plataforma web para el aprendizaje de programación y robótica para niños y ad
 - Rojas Quispe Angela Deniss
 - Velasquez Palomino Kevyn L
 - Tucto Ubaldo Ricardo David
+- Serpa Carpena Edgardo G
 
 ## Tecnologías
 
