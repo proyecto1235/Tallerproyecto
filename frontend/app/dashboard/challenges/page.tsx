@@ -1,76 +1,59 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { ChallengeCard, ChallengeCardProps } from "@/components/dashboard/challenge-card"
-import { Target, Zap, Flame, Trophy, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { Target, Zap, Flame, Trophy, Loader2, Plus } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { useAuth } from "@/hooks/use-auth"
 
 export default function ChallengesPage() {
+  const { user } = useAuth()
   const [userStars, setUserStars] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [challenges, setChallenges] = useState<ChallengeCardProps[]>([])
+
   useEffect(() => {
     const fetchChallenges = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/challenges", {
-          credentials: 'include'
-        })
+        const res = await fetch("http://localhost:8000/api/challenges", { credentials: 'include' })
         const data = await res.json()
         if (data.success && data.challenges && data.challenges.length > 0) {
           const mapped = data.challenges.map((c: any) => ({
             id: c.id.toString(),
             title: c.title,
             description: c.description,
-            difficulty: c.difficulty === 1 ? "Fácil" : c.difficulty === 2 ? "Medio" : "Difícil",
+            difficulty: c.difficulty === 1 ? "Fácil" : c.difficulty === 2 ? "Medio" : c.difficulty === 3 ? "Difícil" : "Experto",
             reward: c.points,
-            status: "active",
+            status: c.user_passed ? "completed" : "active",
             type: "daily",
             timeRemaining: `Autor: ${c.author_name}`
           }))
           setChallenges(mapped)
-          setIsLoading(false)
-          return
         }
       } catch (error) {
         console.error("Error fetching challenges", error)
+      } finally {
+        setIsLoading(false)
       }
-      
-      // Fallback a retos piloto
-      const mockChallenges: ChallengeCardProps[] = [
-        { id: "reto-1", title: "Velocidad Máxima", description: "Configura el motor para llegar al límite sin sobrecalentar.", difficulty: "Fácil", reward: 50, status: "active", type: "daily", timeRemaining: "Termina en 5h" },
-        { id: "reto-2", title: "Laberinto Ciego", description: "Programa el robot para que salga del laberinto usando solo el sensor ultrasónico.", difficulty: "Medio", reward: 150, status: "active", type: "weekly", timeRemaining: "Termina en 3 días" },
-        { id: "reto-3", title: "Optimización de Batería", description: "Reduce el consumo del código en un 30%.", difficulty: "Difícil", reward: 300, status: "locked", type: "special", timeRemaining: "Bloqueado" }
-      ]
-      setChallenges(mockChallenges)
-      setIsLoading(false)
     }
+
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/users/profile", { credentials: 'include' })
+        const data = await res.json()
+        if (data.success) {
+          setUserStars(data.user.points || 0)
+        }
+      } catch (_) {}
+    }
+
     fetchChallenges()
+    fetchProfile()
   }, [])
 
-  const handleTryChallenge = (id: string) => {
-    // Set to running
-    setChallenges(prev => prev.map(c => c.id === id ? { ...c, status: "running" } : c))
-    toast.info("Iniciando entorno del reto...")
-
-    // Simulate completion after delay
-    setTimeout(() => {
-      setChallenges(prev => prev.map(c => {
-        if (c.id === id) {
-          setUserStars(stars => stars + c.reward)
-          toast.success(`¡Reto completado! Has ganado ${c.reward} estrellas.`)
-          return { ...c, status: "completed" }
-        }
-        return c
-      }))
-    }, 2000)
-  }
-
   if (isLoading) {
-    return (
-      <div className="flex h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+    return <div className="flex h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
   }
 
   return (
@@ -82,15 +65,24 @@ export default function ChallengesPage() {
             Centro de Retos
           </h1>
           <p className="text-muted-foreground mt-2 max-w-xl">
-            Pon a prueba tus habilidades de programación con desafíos contrarreloj. 
-            ¡Gana estrellas extra y sube en la clasificación global!
+            Pon a prueba tus habilidades de programación con desafíos. 
+            ¡Gana puntos extra y obtén logros especiales!
           </p>
         </div>
-        <div className="flex items-center gap-4 bg-card p-4 rounded-xl border neo-shadow">
-          <div className="text-center">
-            <p className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Tus Estrellas</p>
-            <p className="text-3xl font-black text-yellow-500">{userStars.toLocaleString()}</p>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 bg-card p-4 rounded-xl border neo-shadow">
+            <div className="text-center">
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Tus Puntos</p>
+              <p className="text-3xl font-black text-yellow-500">{userStars.toLocaleString()}</p>
+            </div>
           </div>
+          {(user?.role === "teacher" || user?.role === "admin") && (
+            <Button asChild>
+              <Link href="/dashboard/challenges/create">
+                <Plus className="w-4 h-4 mr-2" /> Nuevo Reto
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -103,7 +95,11 @@ export default function ChallengesPage() {
           <p className="text-muted-foreground text-center py-10">No hay retos disponibles en este momento.</p>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {challenges.map(c => <ChallengeCard key={c.id} {...c} onClick={() => handleTryChallenge(c.id)} />)}
+            {challenges.map(c => (
+              <Link key={c.id} href={`/dashboard/challenges/${c.id}`}>
+                <ChallengeCard key={c.id} {...c} onClick={() => {}} />
+              </Link>
+            ))}
           </div>
         )}
       </section>

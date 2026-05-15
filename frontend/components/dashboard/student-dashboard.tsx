@@ -58,54 +58,41 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     fetchDashboard()
   }, [])
 
-  // Mock data as fallback
   const progress = dashboardData?.progress || {
-    completedLessons: 8,
-    totalLessons: 24,
-    currentModule: "Variables y Tipos de Datos",
-    nextLesson: "Numeros enteros y decimales",
+    completedLessons: 0,
+    totalLessons: 0,
+    currentModule: "Ninguno",
+    nextLesson: "Ninguno",
   }
 
-  const weeklyChallenge = {
-    title: "Maestro de Variables",
-    description: "Completa 5 ejercicios de variables",
-    progress: 3,
-    total: 5,
-    reward: 50,
-    endsIn: "3 dias",
-  }
+  const dbPoints = dashboardData?.points ?? user?.points ?? 0
+  const dbStreak = dashboardData?.streakDays ?? user?.streakDays ?? 0
+  const completedEx = dashboardData?.completedExercises ?? 0
+  const totalEx = dashboardData?.totalExercises ?? 0
+  const achievementCount = dashboardData?.achievementCount ?? 0
 
-  const recentAchievements = [
-    { name: "Primer Paso", icon: "footprints", earnedAt: "Hace 2 dias" },
-    { name: "Racha de 7 dias", icon: "flame", earnedAt: "Ayer" },
-  ]
+  const recentAchievements = dashboardData?.recentAchievements || []
 
   const recommendations = [
-    { type: "lesson", title: "Continua con: Numeros enteros", module: "Variables", link: "/dashboard/modules" },
-    { type: "exercise", title: "Practica: Crear variables", difficulty: "Facil", link: "/dashboard/exercises" },
-    { type: "challenge", title: "Reto: Maestro de Variables", reward: "50 pts", link: "/dashboard/challenges" },
+    { type: "lesson", title: progress.currentModule !== "Ninguno" ? `Continua con: ${progress.currentModule}` : "Explora los módulos", module: "Módulos", link: "/dashboard/modules" },
+    { type: "exercise", title: totalEx > 0 ? `Practica: ${completedEx}/${totalEx} ejercicios` : "Practica ejercicios", difficulty: "Varios", link: "/dashboard/exercises" },
+    { type: "challenge", title: "Acepta un reto", reward: "Gana puntos", link: "/dashboard/challenges" },
   ]
 
   const weeklyActivityData = dashboardData?.weeklyActivity || [
-    { day: "Lun", puntos: 120 },
-    { day: "Mar", puntos: 250 },
-    { day: "Mié", puntos: 180 },
-    { day: "Jue", puntos: 300 },
-    { day: "Vie", puntos: 210 },
-    { day: "Sáb", puntos: 400 },
-    { day: "Dom", puntos: 150 },
+    { day: "Lun", puntos: 0 },
+    { day: "Mar", puntos: 0 },
+    { day: "Mié", puntos: 0 },
+    { day: "Jue", puntos: 0 },
+    { day: "Vie", puntos: 0 },
+    { day: "Sáb", puntos: 0 },
+    { day: "Dom", puntos: 0 },
   ]
 
   const skillsData = [
-    { name: "Lógica", value: 45, color: "#8b5cf6" }, // purple
-    { name: "Sintaxis", value: 25, color: "#3b82f6" }, // blue
-    { name: "Creatividad", value: 30, color: "#10b981" }, // green
-  ]
-
-  const recentActivityFeed = [
-    { type: "exercise", title: "Bucle For completado", time: "Hace 2 horas", points: 15 },
-    { type: "module", title: "Variables nivel 1 iniciado", time: "Hace 5 horas", points: 0 },
-    { type: "achievement", title: "¡Racha de 3 días!", time: "Ayer", points: 50 },
+    { name: "Lógica", value: Math.min(progress.completedLessons * 10 + 10, 100), color: "#8b5cf6" },
+    { name: "Sintaxis", value: Math.min(completedEx * 5 + 5, 100), color: "#3b82f6" },
+    { name: "Creatividad", value: Math.min(recentAchievements.length * 8 + 5, 100), color: "#10b981" },
   ]
 
   const progressPercent = progress.totalLessons > 0 ? Math.round((progress.completedLessons / progress.totalLessons) * 100) : 0
@@ -127,11 +114,11 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-3 py-2">
             <Star className="h-5 w-5 text-yellow-500" />
-            <span className="font-semibold text-yellow-600">{user?.points || 0} pts</span>
+            <span className="font-semibold text-yellow-600">{dbPoints} pts</span>
           </div>
           <div className="flex items-center gap-2 rounded-lg bg-orange-500/10 px-3 py-2">
             <Flame className="h-5 w-5 text-orange-500" />
-            <span className="font-semibold text-orange-600">{user?.streakDays || 0} dias</span>
+            <span className="font-semibold text-orange-600">{dbStreak} dias</span>
           </div>
         </div>
       </div>
@@ -154,19 +141,19 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
           </Card>
         </Link>
         
-        <Link href="/dashboard/exercises" className="block">
-          <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur hover:border-accent/50 transition-colors cursor-pointer h-full">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
-                <CheckCircle className="h-6 w-6 text-accent" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Ejercicios</p>
-                <p className="text-2xl font-bold text-foreground">23</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+          <Link href="/dashboard/exercises" className="block">
+            <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur hover:border-accent/50 transition-colors cursor-pointer h-full">
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
+                  <CheckCircle className="h-6 w-6 text-accent" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Ejercicios</p>
+                  <p className="text-2xl font-bold text-foreground">{completedEx}/{totalEx}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
 
         <Link href="/dashboard/achievements" className="block">
           <Card className="neo-shadow border-primary/20 bg-card/80 backdrop-blur hover:border-yellow-500/50 transition-colors cursor-pointer h-full">
@@ -176,7 +163,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Logros</p>
-                <p className="text-2xl font-bold text-foreground">5</p>
+                  <p className="text-2xl font-bold text-foreground">{achievementCount}</p>
               </div>
             </CardContent>
           </Card>
@@ -318,7 +305,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
                       fill="hsl(var(--primary))" 
                       barSize={32}
                     >
-                      {weeklyActivityData.map((entry, index) => {
+                      {weeklyActivityData.map((entry: any, index: number) => {
                         const colors = ["#10b981", "#3b82f6", "#8b5cf6", "#10b981", "#3b82f6", "#8b5cf6", "#10b981"]
                         return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                       })}
@@ -334,34 +321,36 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-primary" />
-                Reto Semanal
+                Progreso General
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
-                  <h3 className="font-semibold text-foreground">{weeklyChallenge.title}</h3>
-                  <p className="text-sm text-muted-foreground">{weeklyChallenge.description}</p>
+                  <h3 className="font-semibold text-foreground">Módulos completados</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {progress.completedLessons} de {progress.totalLessons} módulos completados
+                  </p>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    Termina en {weeklyChallenge.endsIn}
+                    <BookOpen className="h-3 w-3" />
+                    Módulo actual: {progress.currentModule}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-center">
                     <p className="text-2xl font-bold text-primary">
-                      {weeklyChallenge.progress}/{weeklyChallenge.total}
+                      {progress.completedLessons}/{progress.totalLessons}
                     </p>
-                    <p className="text-xs text-muted-foreground">completados</p>
+                    <p className="text-xs text-muted-foreground">módulos</p>
                   </div>
                   <div className="text-center rounded-lg bg-yellow-500/10 px-3 py-2">
-                    <p className="text-lg font-bold text-yellow-600">+{weeklyChallenge.reward}</p>
+                    <p className="text-lg font-bold text-yellow-600">+{progress.completedLessons * 50}</p>
                     <p className="text-xs text-muted-foreground">puntos</p>
                   </div>
                 </div>
               </div>
               <Progress
-                value={(weeklyChallenge.progress / weeklyChallenge.total) * 100}
+                value={progressPercent}
                 className="mt-4 h-2"
               />
             </CardContent>
@@ -420,33 +409,27 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentActivityFeed.map((activity, i) => (
+                {recentAchievements.length > 0 ? recentAchievements.map((achievement: any, i: number) => (
                   <div key={i} className="flex gap-3 relative">
-                    {/* Line connection */}
-                    {i !== recentActivityFeed.length - 1 && (
+                    {i !== recentAchievements.length - 1 && (
                       <div className="absolute left-[15px] top-8 bottom-[-16px] w-[2px] bg-border" />
                     )}
-                    <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-background ${
-                      activity.type === 'exercise' ? 'bg-blue-500 text-white' :
-                      activity.type === 'achievement' ? 'bg-yellow-500 text-white' :
-                      'bg-green-500 text-white'
-                    }`}>
-                      {activity.type === 'exercise' ? <Zap className="h-4 w-4" /> :
-                       activity.type === 'achievement' ? <Trophy className="h-4 w-4" /> :
-                       <BookOpen className="h-4 w-4" />}
+                    <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-500 text-white">
+                      <Trophy className="h-4 w-4" />
                     </div>
                     <div className="flex flex-col pb-2">
-                      <span className="text-sm font-semibold leading-none">{activity.title}</span>
-                      <span className="text-xs text-muted-foreground mt-1">{activity.time}</span>
-                      {activity.points > 0 && (
-                        <span className="text-xs font-bold text-yellow-600 mt-1 flex items-center gap-1">
-                          <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                          +{activity.points} pts
-                        </span>
-                      )}
+                      <span className="text-sm font-semibold leading-none">{achievement.name}</span>
+                      <span className="text-xs text-muted-foreground mt-1">{achievement.earnedAt ? new Date(achievement.earnedAt).toLocaleDateString() : 'Reciente'}</span>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                      <Zap className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">Completa ejercicios para ver actividad</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

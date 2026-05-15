@@ -1,168 +1,296 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, FileText, Globe, BookOpen, Edit, Trash2, Search } from "lucide-react"
-import { Input } from "@/components/ui/input"
+import { Loader2, Shield, CheckCircle2, XCircle, Eye, FileText, BookOpen } from "lucide-react"
 import { toast } from "sonner"
 
-const MOCK_CONTENT = [
-  { id: 1, title: "Fundamentos de Robótica", author: "RoboLearn System", category: "General", isPublished: true, views: 1205 },
-  { id: 2, title: "Programación en Python", author: "RoboLearn System", category: "General", isPublished: true, views: 890 },
-  { id: 3, title: "Sensores Avanzados", author: "RoboLearn System", category: "General", isPublished: false, views: 0 },
-  { id: 4, title: "Proyecto: Brazo Robótico", author: "Prof. Carlos", category: "Específico", isPublished: true, views: 340 },
-  { id: 5, title: "Taller Arduino Básico", author: "Escuela San José", category: "Específico", isPublished: false, views: 0 },
-]
+const statusLabels: Record<string, string> = {
+  pending_review: "Pendiente de Revisión",
+  pending_deletion: "Pendiente de Eliminación",
+  draft: "Borrador",
+  approved: "Aprobado",
+  rejected: "Rechazado",
+}
+
+const statusColors: Record<string, string> = {
+  pending_review: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+  pending_deletion: "bg-red-500/10 text-red-600 border-red-500/20",
+  draft: "bg-gray-500/10 text-gray-600 border-gray-500/20",
+  approved: "bg-green-500/10 text-green-600 border-green-500/20",
+  rejected: "bg-red-500/10 text-red-600 border-red-500/20",
+}
 
 export default function ContentReviewPage() {
-  const [content, setContent] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedModule, setSelectedModule] = useState<any>(null)
+  const [moduleLoading, setModuleLoading] = useState(false)
 
   useEffect(() => {
-    // Simular carga
-    setTimeout(() => {
-      setContent(MOCK_CONTENT)
-      setIsLoading(false)
-    }, 800)
+    fetchItems()
   }, [])
 
-  const handleTogglePublish = (id: number, currentStatus: boolean, title: string) => {
-    setContent(content.map(c => c.id === id ? { ...c, isPublished: !currentStatus } : c))
-    toast.success(`El módulo "${title}" ahora está ${!currentStatus ? 'publicado' : 'despublicado'}.`)
+  const fetchItems = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/admin/content-review", { credentials: 'include' })
+      const data = await res.json()
+      if (data.success) setItems(data.items)
+    } catch (e) {
+      console.error("Error fetching content review items", e)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = (id: number, title: string) => {
-    setContent(content.filter(c => c.id !== id))
-    toast.success(`Módulo "${title}" eliminado permanentemente.`)
+  const handleViewModule = async (moduleId: number) => {
+    setModuleLoading(true)
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}`, { credentials: 'include' })
+      const data = await res.json()
+      if (data.success) setSelectedModule(data.module)
+    } catch (e) {
+      toast.error("Error al cargar módulo")
+    } finally {
+      setModuleLoading(false)
+    }
   }
 
-  const renderTable = (filteredContent: any[]) => {
-    const data = filteredContent.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()) || c.author.toLowerCase().includes(searchQuery.toLowerCase()))
-    
-    return (
-      <div className="rounded-md border overflow-hidden">
-        <Table>
-          <TableHeader className="bg-muted/50">
-            <TableRow>
-              <TableHead>Título del Módulo</TableHead>
-              <TableHead>Autor</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Vistas</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((item) => (
-              <TableRow key={item.id} className="hover:bg-muted/50">
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-primary" />
-                    <span className="font-semibold">{item.title}</span>
-                  </div>
-                </TableCell>
-                <TableCell>{item.author}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Switch 
-                      checked={item.isPublished} 
-                      onCheckedChange={() => handleTogglePublish(item.id, item.isPublished, item.title)} 
-                    />
-                    <Badge variant={item.isPublished ? "default" : "secondary"}>
-                      {item.isPublished ? "Publicado" : "Borrador"}
-                    </Badge>
-                  </div>
-                </TableCell>
-                <TableCell>{item.views} lecturas</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => toast.info("Función de editar en desarrollo")} title="Editar Módulo">
-                      <Edit className="h-4 w-4 text-orange-500" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(item.id, item.title)} title="Eliminar Módulo">
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {data.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  No se encontraron módulos.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    )
+  const handleApprove = async (moduleId: number) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}/approve`, {
+        method: "POST", credentials: 'include'
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Módulo aprobado y publicado")
+        setItems(prev => prev.filter(i => i.id !== moduleId))
+        setSelectedModule(null)
+      }
+    } catch (e) {
+      toast.error("Error al aprobar")
+    }
+  }
+
+  const handleReject = async (moduleId: number) => {
+    const feedback = prompt("Razón del rechazo (opcional):")
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: 'include',
+        body: JSON.stringify({ feedback: feedback || "" })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Módulo rechazado")
+        setItems(prev => prev.filter(i => i.id !== moduleId))
+        setSelectedModule(null)
+      }
+    } catch (e) {
+      toast.error("Error al rechazar")
+    }
+  }
+
+  const handleApproveDeletion = async (moduleId: number) => {
+    if (!confirm("¿Estás seguro de eliminar este módulo definitivamente?")) return
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}/approve-deletion`, {
+        method: "POST", credentials: 'include'
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Módulo eliminado")
+        setItems(prev => prev.filter(i => i.id !== moduleId))
+        setSelectedModule(null)
+      }
+    } catch (e) {
+      toast.error("Error")
+    }
+  }
+
+  if (loading) {
+    return <div className="flex h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
   }
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-10">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Gestión de Contenido</h1>
-        <p className="text-muted-foreground text-lg">
-          Supervisa los módulos educativos, aprueba contenido de profesores y gestiona el catálogo.
-        </p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Revisión de Contenido</h1>
+        <p className="text-muted-foreground">Gestiona las solicitudes de publicación y eliminación de módulos.</p>
       </div>
 
-      <Card className="neo-shadow border-primary/20">
-        <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <CardTitle>Catálogo de Módulos</CardTitle>
-            <CardDescription>Control total sobre lo que los estudiantes pueden ver.</CardDescription>
-          </div>
-          <div className="relative w-full md:w-auto">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por título o autor..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 w-full md:w-80"
-            />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : (
-            <Tabs defaultValue="all" className="space-y-4">
-              <TabsList className="bg-muted/50 p-1">
-                <TabsTrigger value="all" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
-                  Todos los Módulos
-                </TabsTrigger>
-                <TabsTrigger value="general" className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
-                  <Globe className="h-4 w-4" /> Globales
-                </TabsTrigger>
-                <TabsTrigger value="specific" className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
-                  <BookOpen className="h-4 w-4" /> De Profesores
-                </TabsTrigger>
-              </TabsList>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Contenido Pendiente
+              </CardTitle>
+              <CardDescription>Módulos que requieren revisión o aprobación.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {items.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No hay contenido pendiente de revisión.</p>
+              ) : (
+                <div className="space-y-3">
+                  {items.map((item) => (
+                    <Card key={item.id} className="border-muted cursor-pointer hover:border-primary/30 transition-colors" onClick={() => handleViewModule(item.id)}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge className={statusColors[item.status] || "bg-gray-500/10"} variant="outline">
+                                {statusLabels[item.status] || item.status}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">por {item.teacher_name}</span>
+                            </div>
+                            <h3 className="font-bold">{item.title}</h3>
+                            {item.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{item.description}</p>}
+                          </div>
+                          <Button variant="ghost" size="sm">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-              <TabsContent value="all" className="space-y-4">
-                {renderTable(content)}
-              </TabsContent>
-              
-              <TabsContent value="general" className="space-y-4">
-                {renderTable(content.filter(c => c.category === "General"))}
-              </TabsContent>
-              
-              <TabsContent value="specific" className="space-y-4">
-                {renderTable(content.filter(c => c.category === "Específico"))}
-              </TabsContent>
-            </Tabs>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-primary" />
+                Módulos Globales
+              </CardTitle>
+              <CardDescription>Edita directamente el contenido de los módulos globales.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full" onClick={async () => {
+                try {
+                  const res = await fetch("http://localhost:8000/api/admin/modules", { credentials: 'include' })
+                  const data = await res.json()
+                  if (data.success) {
+                    const globalMods = data.modules.filter((m: any) => m.is_global)
+                    if (globalMods.length > 0) handleViewModule(globalMods[0].id)
+                  }
+                } catch (e) {
+                  toast.error("Error al cargar módulos globales")
+                }
+              }}>
+                Ver Módulos Globales
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div>
+          {moduleLoading ? (
+            <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
+          ) : selectedModule ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-primary" />
+                      {selectedModule.title}
+                    </CardTitle>
+                    <CardDescription>
+                      por {selectedModule.teacher_name} · {selectedModule.lessons?.length || 0} lecciones · {selectedModule.exercises?.length || 0} ejercicios
+                    </CardDescription>
+                  </div>
+                  <Badge className={statusColors[selectedModule.status]} variant="outline">
+                    {statusLabels[selectedModule.status] || selectedModule.status}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {selectedModule.description && (
+                  <div>
+                    <h4 className="text-sm font-bold text-muted-foreground mb-1">Descripción</h4>
+                    <p className="text-sm">{selectedModule.description}</p>
+                  </div>
+                )}
+
+                {selectedModule.theory_content && (
+                  <div>
+                    <h4 className="text-sm font-bold text-muted-foreground mb-1">Contenido teórico</h4>
+                    <pre className="text-xs font-mono bg-muted p-3 rounded-lg max-h-40 overflow-y-auto whitespace-pre-wrap">{selectedModule.theory_content.substring(0, 500)}...</pre>
+                  </div>
+                )}
+
+                {selectedModule.exercises && selectedModule.exercises.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-bold text-muted-foreground mb-2">Ejercicios</h4>
+                    <div className="space-y-2">
+                      {selectedModule.exercises.map((ex: any) => (
+                        <div key={ex.id} className="flex items-center justify-between text-sm bg-muted/30 p-2 rounded-lg">
+                          <span>{ex.title}</span>
+                          <span className="text-xs text-muted-foreground">Dificultad: {ex.difficulty}/5 · {ex.points} pts</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedModule.status === "pending_review" && (
+                  <div className="flex gap-3 pt-4 border-t">
+                    <Button className="bg-green-600 hover:bg-green-700 flex-1" onClick={() => handleApprove(selectedModule.id)}>
+                      <CheckCircle2 className="w-4 h-4 mr-2" /> Aprobar
+                    </Button>
+                    <Button variant="destructive" className="flex-1" onClick={() => handleReject(selectedModule.id)}>
+                      <XCircle className="w-4 h-4 mr-2" /> Rechazar
+                    </Button>
+                  </div>
+                )}
+
+                {selectedModule.status === "pending_deletion" && (
+                  <div className="flex gap-3 pt-4 border-t">
+                    <Button variant="destructive" onClick={() => handleApproveDeletion(selectedModule.id)}>
+                      <CheckCircle2 className="w-4 h-4 mr-2" /> Aprobar Eliminación
+                    </Button>
+                  </div>
+                )}
+
+                {selectedModule.is_global && selectedModule.status === "approved" && (
+                  <div className="pt-4 border-t">
+                    <Button variant="outline" className="w-full" onClick={() => {
+                      const content = prompt("Editar descripción del módulo:", selectedModule.description || "")
+                      if (content) {
+                        fetch(`http://localhost:8000/api/admin/modules/${selectedModule.id}/content`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: 'include',
+                          body: JSON.stringify({ description: content })
+                        }).then(r => r.json()).then(d => {
+                          if (d.success) toast.success("Contenido actualizado")
+                        })
+                      }
+                    }}>
+                      Editar Contenido
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                <Shield className="w-12 h-12 mb-4 opacity-30" />
+                <p>Selecciona un módulo para revisar</p>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

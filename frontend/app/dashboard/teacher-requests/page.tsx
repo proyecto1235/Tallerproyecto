@@ -8,32 +8,54 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react"
 import { toast } from "sonner"
 
-const MOCK_REQUESTS = [
-  { id: 101, name: "Fernando Ruiz", email: "fernando.r@ejemplo.com", role: "teacher", status: "pending", date: "2024-04-28" },
-  { id: 102, name: "María Gómez", email: "maria.g@ejemplo.com", role: "teacher", status: "pending", date: "2024-04-29" },
-  { id: 103, name: "Escuela San José", email: "admin@sanjose.edu", role: "admin", status: "pending", date: "2024-04-29" }
-]
-
 export default function TeacherRequestsPage() {
   const [requests, setRequests] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Simular carga
-    setTimeout(() => {
-      setRequests(MOCK_REQUESTS)
-      setIsLoading(false)
-    }, 800)
+    fetchRequests()
   }, [])
 
-  const handleApprove = (id: number, name: string) => {
-    setRequests(requests.filter(req => req.id !== id))
-    toast.success(`Solicitud de ${name} aprobada. Ahora es usuario activo.`)
+  const fetchRequests = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/admin/teachers/pending", { credentials: 'include' })
+      const data = await res.json()
+      if (data.success) setRequests(data.requests)
+    } catch (error) {
+      console.error("Error fetching requests:", error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleReject = (id: number, name: string) => {
-    setRequests(requests.filter(req => req.id !== id))
-    toast.info(`Solicitud de ${name} rechazada.`)
+  const handleApprove = async (id: number, name: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/teachers/approve/${id}`, {
+        method: "POST", credentials: 'include'
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`${name} ahora es profesor activo.`)
+        setRequests(prev => prev.filter(r => r.id !== id))
+      }
+    } catch (e) {
+      toast.error("Error al aprobar")
+    }
+  }
+
+  const handleReject = async (id: number, name: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/teachers/reject/${id}`, {
+        method: "POST", credentials: 'include'
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.info(`Solicitud de ${name} rechazada.`)
+        setRequests(prev => prev.filter(r => r.id !== id))
+      }
+    } catch (e) {
+      toast.error("Error al rechazar")
+    }
   }
 
   return (
@@ -48,15 +70,11 @@ export default function TeacherRequestsPage() {
       <Card className="neo-shadow border-primary/20">
         <CardHeader>
           <CardTitle>Solicitudes Pendientes</CardTitle>
-          <CardDescription>
-            Tienen acceso restringido hasta que un administrador verifique su identidad.
-          </CardDescription>
+          <CardDescription>Tienen acceso restringido hasta que un administrador verifique su identidad.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
           ) : (
             <div className="rounded-md border overflow-hidden">
               <Table>
@@ -78,11 +96,7 @@ export default function TeacherRequestsPage() {
                           <span className="text-sm text-muted-foreground">{req.email}</span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={req.role === "admin" ? "destructive" : "default"} className="capitalize">
-                          {req.role === "teacher" ? "Profesor" : req.role}
-                        </Badge>
-                      </TableCell>
+                      <TableCell><Badge variant="default" className="capitalize">Profesor</Badge></TableCell>
                       <TableCell>{req.date}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 text-orange-500 font-medium text-sm">

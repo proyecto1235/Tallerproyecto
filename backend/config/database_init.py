@@ -7,56 +7,31 @@ import os
 from pathlib import Path
 from config.settings import settings
 
-def get_sql_scripts():
-    """Get paths to SQL scripts"""
-    # Try multiple possible locations, prioritize backend/scripts first
-    possible_paths = [
-        # Backend scripts (priority)
-        Path(__file__).parent.parent / "scripts" / "001-create-tables.sql",
-        Path(__file__).parent.parent / "scripts" / "002-seed-data.sql",
-        # Root scripts
-        Path(__file__).parent.parent.parent / "scripts" / "001-create-tables.sql",
-        Path(__file__).parent.parent.parent / "scripts" / "002-seed-data.sql",
-        # Relative paths
-        Path("backend/scripts/001-create-tables.sql"),
-        Path("backend/scripts/002-seed-data.sql"),
-        Path("scripts/001-create-tables.sql"),
-        Path("scripts/002-seed-data.sql"),
+def find_script(name: str):
+    """Find a SQL script by name"""
+    base = Path(__file__).parent.parent / "scripts"
+    paths = [
+        base / name,
+        Path("backend/scripts") / name,
+        Path("scripts") / name,
     ]
-    
-    scripts = {}
-    for path in possible_paths:
-        if path.exists():
-            if "001" in str(path):
-                if "create_tables" not in scripts:
-                    scripts["create_tables"] = path
-            elif "002" in str(path):
-                if "seed_data" not in scripts:
-                    scripts["seed_data"] = path
-    
-    return scripts
+    for p in paths:
+        if p.exists():
+            return p
+    return None
 
 def database_exists(db_name: str) -> bool:
     """Check if database exists"""
     try:
-        # Connect to default postgres database to check
         conn = psycopg2.connect(
-            host=settings.postgres_host,
-            port=settings.postgres_port,
-            user=settings.postgres_user,
-            password=settings.postgres_password,
+            host=settings.postgres_host, port=settings.postgres_port,
+            user=settings.postgres_user, password=settings.postgres_password,
             database="postgres"
         )
         cursor = conn.cursor()
-        
-        cursor.execute(
-            "SELECT 1 FROM pg_database WHERE datname = %s",
-            (db_name,)
-        )
+        cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
         exists = cursor.fetchone() is not None
-        
-        cursor.close()
-        conn.close()
+        cursor.close(); conn.close()
         return exists
     except Exception as e:
         print(f"Error checking if database exists: {e}")
@@ -66,28 +41,18 @@ def create_database(db_name: str):
     """Create database if it doesn't exist"""
     try:
         conn = psycopg2.connect(
-            host=settings.postgres_host,
-            port=settings.postgres_port,
-            user=settings.postgres_user,
-            password=settings.postgres_password,
+            host=settings.postgres_host, port=settings.postgres_port,
+            user=settings.postgres_user, password=settings.postgres_password,
             database="postgres"
         )
         conn.autocommit = True
         cursor = conn.cursor()
-        
-        # Create database if it doesn't exist
         try:
-            cursor.execute(sql.SQL("CREATE DATABASE {}").format(
-                sql.Identifier(db_name)
-            ))
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
         except psycopg2.Error as e:
-            if "already exists" in str(e).lower():
-                print(f"  [OK] Database '{db_name}' already exists")
-            else:
+            if "already exists" not in str(e).lower():
                 raise
-        
-        cursor.close()
-        conn.close()
+        cursor.close(); conn.close()
         print(f"[OK] Database '{db_name}' is ready")
         return True
     except Exception as e:
@@ -98,55 +63,40 @@ def table_exists(cursor, table_name: str) -> bool:
     """Check if a table exists"""
     try:
         cursor.execute(
-            """
-            SELECT 1 FROM information_schema.tables 
-            WHERE table_name = %s AND table_schema = 'public'
-            """,
+            "SELECT 1 FROM information_schema.tables WHERE table_name = %s AND table_schema = 'public'",
             (table_name,)
         )
         return cursor.fetchone() is not None
-    except Exception as e:
-        print(f"Error checking if table exists: {e}")
+    except:
         return False
 
 def execute_sql_file(file_path: Path) -> bool:
     """Execute SQL file against the database"""
     try:
         conn = psycopg2.connect(
-            host=settings.postgres_host,
-            port=settings.postgres_port,
-            user=settings.postgres_user,
-            password=settings.postgres_password,
+            host=settings.postgres_host, port=settings.postgres_port,
+            user=settings.postgres_user, password=settings.postgres_password,
             database=settings.postgres_db
         )
         cursor = conn.cursor()
-        
-        # Read and execute SQL file
         with open(file_path, 'r', encoding='utf-8') as f:
             sql_script = f.read()
-        
-        # Execute all commands in the script
-        # Split by semicolon to execute statements one by one (better error handling)
         statements = sql_script.split(';')
         for statement in statements:
-            statement = statement.strip()
-            if statement:  # Only execute non-empty statements
+            stmt = statement.strip()
+            if stmt:
                 try:
-                    cursor.execute(statement)
+                    cursor.execute(stmt)
                 except psycopg2.Error as e:
-                    # Log the error but continue with other statements
-                    # This allows INSERT conflicts to be skipped while still creating tables
-                    error_msg = str(e).lower()
-                    if "conflict" in error_msg or "already exists" in error_msg:
-                        # These are expected errors in seed scripts
+                    msg = str(e).lower()
+                    if "conflict" in msg or "already exists" in msg:
+                        pass
+                    elif "syntax" in msg:
                         pass
                     else:
-                        print(f"  [WARN] Warning in SQL execution: {e}")
-        
+                        print(f"  [WARN] {e}")
         conn.commit()
-        
-        cursor.close()
-        conn.close()
+        cursor.close(); conn.close()
         print(f"[OK] Executed: {file_path.name}")
         return True
     except Exception as e:
@@ -157,36 +107,29 @@ def data_exists(table_name: str) -> bool:
     """Check if data exists in a table"""
     try:
         conn = psycopg2.connect(
-            host=settings.postgres_host,
-            port=settings.postgres_port,
-            user=settings.postgres_user,
-            password=settings.postgres_password,
+            host=settings.postgres_host, port=settings.postgres_port,
+            user=settings.postgres_user, password=settings.postgres_password,
             database=settings.postgres_db
         )
         cursor = conn.cursor()
-        
         cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
         count = cursor.fetchone()[0]
-        
-        cursor.close()
-        conn.close()
+        cursor.close(); conn.close()
         return count > 0
-    except Exception as e:
-        print(f"Error checking if data exists: {e}")
+    except:
         return False
 
 def initialize_database():
     """
     Initialize database:
-    1. Create database if it doesn't exist
-    2. Create tables if they don't exist
-    3. Seed data if tables are empty
+    1. Create database
+    2. Create tables (001-create-tables.sql)
+    3. Seed data (002-seed-data.sql)
     """
     print("\n" + "="*50)
     print("Database Initialization Starting...")
     print("="*50)
-    
-    # Step 1: Create database
+
     print("\n[1/3] Checking/Creating Database...")
     if not database_exists(settings.postgres_db):
         print(f"  Creating database '{settings.postgres_db}'...")
@@ -195,67 +138,36 @@ def initialize_database():
             return False
     else:
         print(f"  [OK] Database '{settings.postgres_db}' already exists")
-    
-    # Step 2: Get SQL scripts
-    scripts = get_sql_scripts()
-    
-    # Step 3: Create tables if needed
-    print("\n[2/3] Checking/Creating Tables...")
-    if "create_tables" in scripts:
-        try:
-            conn = psycopg2.connect(
-                host=settings.postgres_host,
-                port=settings.postgres_port,
-                user=settings.postgres_user,
-                password=settings.postgres_password,
-                database=settings.postgres_db
-            )
-            cursor = conn.cursor()
-            
-            # Check if main table exists
-            if table_exists(cursor, "users"):
-                print("  [OK] Tables already exist")
-            else:
-                print("  Creating tables...")
-                cursor.close()
-                conn.close()
-                if execute_sql_file(scripts["create_tables"]):
-                    print("  [OK] Tables created successfully")
-                else:
-                    print("  [ERROR] Failed to create tables")
-                    return False
-            
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
-        except Exception as e:
-            print(f"  [ERROR] Error checking tables: {e}")
+
+    script_001 = find_script("001-create-tables.sql")
+    script_002 = find_script("002-seed-data.sql")
+
+    print("\n[2/3] Creating Tables...")
+    if script_001:
+        if execute_sql_file(script_001):
+            print("  [OK] Tables created successfully")
+        else:
+            print("  [ERROR] Failed to create tables")
             return False
     else:
-        print("  [WARN] create-tables script not found at expected locations")
-        print("    Searching in: backend/scripts/ or scripts/")
-    
-    # Step 4: Seed data if empty
-    print("\n[3/3] Checking/Seeding Data...")
-    if "seed_data" in scripts:
+        print("  [WARN] 001-create-tables.sql not found")
+
+    print("\n[3/3] Seeding Data...")
+    if script_002:
         try:
             if data_exists("users"):
                 print("  [OK] Data already exists (seed skipped)")
             else:
-                print("  Seeding initial data...")
-                if execute_sql_file(scripts["seed_data"]):
+                if execute_sql_file(script_002):
                     print("  [OK] Data seeded successfully")
                 else:
-                    print("  [WARN] Seed had some issues, but continuing...")
+                    print("  [WARN] Seed had issues")
         except Exception as e:
-            print(f"  Error checking/seeding data: {e}")
+            print(f"  Error: {e}")
     else:
-        print("  [WARN] seed-data script not found at expected locations")
-        print("    Searching in: backend/scripts/ or scripts/")
-    
+        print("  [WARN] 002-seed-data.sql not found")
+
     print("\n" + "="*50)
     print("[OK] Database initialization complete!")
     print("="*50 + "\n")
-    
     return True

@@ -14,7 +14,7 @@ class EventRepository:
     def get_db(cls):
         """Get MongoDB database instance"""
         if cls._db is None:
-            cls._client = MongoClient(settings.mongodb_url)
+            cls._client = MongoClient(settings.mongodb_url, serverSelectionTimeoutMS=3000)
             cls._db = cls._client[settings.mongodb_db]
         return cls._db
     

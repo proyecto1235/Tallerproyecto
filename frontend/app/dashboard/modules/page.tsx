@@ -40,16 +40,63 @@ export default function ModulesPage() {
         if (data.success && data.modules) {
           const global = data.modules.filter((m: any) => m.is_global).sort((a: any, b: any) => a.order - b.order)
           if (global.length > 0) {
-            const mapped = global.map((m: any, i: number) => ({
-              id: m.id.toString(),
-              title: m.title,
-              description: m.description,
-              level: m.order || (i + 1),
-              difficulty: m.difficulty || "Principiante",
-              lessons: m.lesson_count || 3,
-              status: i === 0 ? "in-progress" : "locked",
-              progress: i === 0 ? 30 : 0,
-            }))
+            // Fetch enrolled modules to get progress
+            let enrolledMap: Record<string, any> = {}
+            try {
+              const enrRes = await fetch("http://localhost:8000/api/modules/enrolled", { credentials: 'include' })
+              const enrData = await enrRes.json()
+              if (enrData.success) {
+                for (const m of enrData.modules) {
+                  enrolledMap[m.id.toString()] = {
+                    enrollment_status: m.enrollment_status,
+                    progress: m.percentage || 0
+                  }
+                }
+              }
+            } catch (_) {}
+
+            const mapped = global.map((m: any) => {
+              const id = m.id.toString()
+              const enrolled = enrolledMap[id]
+              let status: string
+              let progress: number
+
+              if (enrolled) {
+                if (enrolled.enrollment_status === "completed") {
+                  status = "completed"; progress = 100
+                } else {
+                  status = "in-progress"; progress = enrolled.progress || 0
+                }
+              } else {
+                // Check if previous module is completed to determine lock status
+                status = "locked"; progress = 0
+              }
+
+              return {
+                id,
+                title: m.title,
+                description: m.description,
+                level: m.order || 0,
+                difficulty: m.difficulty || "Principiante",
+                lessons: m.lesson_count || 3,
+                status,
+                progress,
+              }
+            })
+
+            // Fix lock status: first unlockable module should be in-progress or available
+            let foundActive = false
+            for (const mod of mapped) {
+              if (mod.status === "in-progress") {
+                foundActive = true; break
+              }
+              if (mod.status === "completed") continue
+              if (!foundActive) {
+                mod.status = "in-progress"
+                foundActive = true
+              }
+            }
+
             setModules(mapped)
             setLoading(false)
             return
