@@ -4,54 +4,96 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root, .dark {
-  /* Fondo oscuro profundo con tinte azulado (Cyber/Terminal) */
+/* ============================================
+   Light Theme (default)
+   ============================================ */
+:root {
+  --background: oklch(0.97 0.01 260);
+  --foreground: oklch(0.18 0.03 260);
+
+  --card: oklch(0.99 0.005 260);
+  --card-foreground: oklch(0.18 0.03 260);
+
+  --popover: oklch(0.99 0.005 260);
+  --popover-foreground: oklch(0.18 0.03 260);
+
+  --primary: oklch(0.45 0.2 140);
+  --primary-foreground: oklch(0.98 0.01 140);
+
+  --secondary: oklch(0.55 0.2 240);
+  --secondary-foreground: oklch(0.98 0.01 240);
+
+  --muted: oklch(0.92 0.02 260);
+  --muted-foreground: oklch(0.5 0.05 260);
+
+  --accent: oklch(0.6 0.2 340);
+  --accent-foreground: oklch(0.98 0.01 340);
+
+  --destructive: oklch(0.55 0.25 25);
+  --destructive-foreground: oklch(0.98 0.01 25);
+
+  --border: oklch(0.85 0.04 260);
+  --input: oklch(0.88 0.03 260);
+  --ring: oklch(0.45 0.2 140);
+
+  --chart-1: oklch(0.55 0.2 140);
+  --chart-2: oklch(0.55 0.2 240);
+  --chart-3: oklch(0.6 0.2 340);
+  --chart-4: oklch(0.65 0.2 80);
+  --chart-5: oklch(0.55 0.25 25);
+
+  --radius: 1rem;
+
+  --sidebar: oklch(0.95 0.01 260);
+  --sidebar-foreground: oklch(0.18 0.03 260);
+  --sidebar-primary: oklch(0.45 0.2 140);
+  --sidebar-primary-foreground: oklch(0.98 0.01 140);
+  --sidebar-accent: oklch(0.9 0.02 260);
+  --sidebar-accent-foreground: oklch(0.18 0.03 260);
+  --sidebar-border: oklch(0.85 0.04 260);
+  --sidebar-ring: oklch(0.45 0.2 140);
+}
+
+/* ============================================
+   Dark Theme
+   ============================================ */
+.dark {
   --background: oklch(0.18 0.03 260);
   --foreground: oklch(0.95 0.02 260);
-  
-  /* Tarjetas ligeramente más claras */
+
   --card: oklch(0.22 0.04 260);
   --card-foreground: oklch(0.95 0.02 260);
-  
+
   --popover: oklch(0.22 0.04 260);
   --popover-foreground: oklch(0.95 0.02 260);
-  
-  /* Verde Neón (Inspirado en Fallout Pipboy pero vibrante) */
+
   --primary: oklch(0.75 0.25 140);
   --primary-foreground: oklch(0.15 0.05 140);
-  
-  /* Azul Eléctrico/Cian para botones secundarios o resaltados */
+
   --secondary: oklch(0.65 0.25 240);
   --secondary-foreground: oklch(0.15 0.05 240);
-  
-  /* Muted para fondos inactivos */
+
   --muted: oklch(0.28 0.05 260);
   --muted-foreground: oklch(0.75 0.05 260);
-  
-  /* Rosa Neón para acentos divertidos y recompensas */
+
   --accent: oklch(0.7 0.25 340);
   --accent-foreground: oklch(0.15 0.05 340);
-  
-  /* Rojo Neón brillante para errores */
+
   --destructive: oklch(0.65 0.25 25);
   --destructive-foreground: oklch(0.95 0.02 25);
-  
-  /* Bordes notorios pero oscuros */
+
   --border: oklch(0.35 0.08 260);
   --input: oklch(0.25 0.06 260);
   --ring: oklch(0.75 0.25 140);
-  
-  /* Gráficos / Medallas */
-  --chart-1: oklch(0.75 0.25 140); /* Verde */
-  --chart-2: oklch(0.65 0.25 240); /* Azul */
-  --chart-3: oklch(0.7 0.25 340);  /* Rosa */
-  --chart-4: oklch(0.8 0.25 80);   /* Amarillo Neón */
-  --chart-5: oklch(0.65 0.25 25);  /* Rojo */
-  
-  /* Bordes muy redondeados para el aspecto amigable/juego */
+
+  --chart-1: oklch(0.75 0.25 140);
+  --chart-2: oklch(0.65 0.25 240);
+  --chart-3: oklch(0.7 0.25 340);
+  --chart-4: oklch(0.8 0.25 80);
+  --chart-5: oklch(0.65 0.25 25);
+
   --radius: 1.5rem;
-  
-  /* Sidebar */
+
   --sidebar: oklch(0.2 0.04 260);
   --sidebar-foreground: oklch(0.95 0.02 260);
   --sidebar-primary: oklch(0.75 0.25 140);
@@ -66,7 +108,7 @@
   --font-sans: 'Inter', sans-serif;
   --font-heading: 'Orbitron', sans-serif;
   --font-mono: 'Orbitron', monospace;
-  
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -91,13 +133,13 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  
+
   --radius-sm: calc(var(--radius) - 8px);
   --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 8px);
   --radius-full: 9999px;
-  
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -108,57 +150,72 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground font-sans selection:bg-primary/30;
-    /* Patrón de fondo tipo "grid" o escaneo retro */
-    background-image: 
-      linear-gradient(to right, oklch(0.35 0.08 260 / 0.1) 1px, transparent 1px),
-      linear-gradient(to bottom, oklch(0.35 0.08 260 / 0.1) 1px, transparent 1px);
-    background-size: 40px 40px;
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-heading tracking-wide;
-  }
+/* ============================================
+   Base Styles
+   ============================================ */
+body {
+  font-family: var(--font-sans);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Efectos Gamificados */
-@layer utilities {
-  .neo-shadow {
-    box-shadow: 0 8px 0 0 var(--color-border);
-    transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .neo-shadow:active {
-    transform: translateY(4px);
-    box-shadow: 0 4px 0 0 var(--color-border);
-  }
-  .neo-shadow-primary {
-    box-shadow: 0 8px 0 0 color-mix(in oklch, var(--color-primary) 50%, transparent);
-    transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .neo-shadow-primary:active {
-    transform: translateY(4px);
-    box-shadow: 0 4px 0 0 color-mix(in oklch, var(--color-primary) 50%, transparent);
-  }
-  
-  .scanline {
-    position: relative;
-    /* overflow: scroll; */
-  }
-  .scanline::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.25) 51%);
-    background-size: 100% 4px;
-    pointer-events: none;
-    z-index: 10;
-  }
+/* ============================================
+   Prose Overrides
+   ============================================ */
+.prose {
+  --tw-prose-body: var(--foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-links: var(--primary);
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-code: var(--primary);
+  --tw-prose-pre-bg: transparent;
+  --tw-prose-quotes: var(--muted-foreground);
+  --tw-prose-quote-borders: var(--primary);
+}
+
+.prose pre {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+.prose img {
+  border-radius: var(--radius-md);
+}
+
+.prose hr {
+  border-color: var(--border);
+}
+
+/* ============================================
+   Scrollbar
+   ============================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ============================================
+   Scanline Effect (only in dark mode)
+   ============================================ */
+.dark .scanline {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
 }

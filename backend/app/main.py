@@ -1953,6 +1953,20 @@ async def get_admin_dashboard(token_data: TokenData = Depends(verify_admin)):
             
     return {"success": True, "stats": stats}
 
+@app.get("/api/admin/audit-logs", tags=["Admin"])
+async def get_audit_logs(limit: int = 50, token_data: TokenData = Depends(verify_admin)):
+    """Get audit logs from MongoDB events"""
+    try:
+        db = event_repository.get_db()
+        events = list(db.events.find().sort("timestamp", -1).limit(limit))
+        for event in events:
+            event["_id"] = str(event["_id"])
+            if "timestamp" in event:
+                event["timestamp"] = event["timestamp"].isoformat()
+        return {"success": True, "events": events}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # ============================================
 # Routes - Admin Content Management
 # ============================================

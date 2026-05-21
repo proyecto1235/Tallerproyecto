@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useTheme } from "next-themes"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
@@ -26,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Settings2, User, Bell, Shield, Palette, Loader2, CheckCircle2 } from "lucide-react"
+import { Settings2, User, Bell, Shield, Palette, Loader2, CheckCircle2, Sun, Moon } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const profileFormSchema = z.object({
@@ -47,6 +48,7 @@ const PREDEFINED_AVATARS = [
 ]
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme()
   const [savedProfile, setSavedProfile] = useState({
     username: "",
     email: "",
@@ -420,22 +422,46 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex gap-4">
-                <div className="flex-1 p-4 border-2 border-primary rounded-xl cursor-pointer bg-background hover:bg-muted/50 transition-colors">
+                <button
+                  onClick={() => setTheme("dark")}
+                  className={`flex-1 p-4 rounded-xl cursor-pointer transition-all ${
+                    theme === "dark"
+                      ? "border-2 border-primary bg-primary/5"
+                      : "border-2 border-transparent bg-background hover:bg-muted/50 opacity-60 grayscale"
+                  }`}
+                >
                   <div className="w-full h-24 bg-slate-950 rounded-md mb-2 p-2 flex flex-col gap-2">
                     <div className="w-1/2 h-2 bg-slate-800 rounded-full" />
                     <div className="w-full h-full bg-slate-900 rounded border border-slate-800" />
                   </div>
-                  <p className="text-center font-bold text-sm">Tema Oscuro</p>
-                  <p className="text-center text-xs text-muted-foreground mt-1">Modo hacker (Activo)</p>
-                </div>
-                <div className="flex-1 p-4 border-2 border-transparent rounded-xl cursor-pointer bg-background hover:bg-muted/50 transition-colors opacity-50 grayscale">
+                  <div className="flex items-center justify-center gap-2">
+                    <Moon className="w-4 h-4" />
+                    <p className="font-bold text-sm">Tema Oscuro</p>
+                  </div>
+                  {theme === "dark" && (
+                    <p className="text-center text-xs text-primary mt-1">Activo</p>
+                  )}
+                </button>
+                <button
+                  onClick={() => setTheme("light")}
+                  className={`flex-1 p-4 rounded-xl cursor-pointer transition-all ${
+                    theme === "light"
+                      ? "border-2 border-primary bg-primary/5"
+                      : "border-2 border-transparent bg-background hover:bg-muted/50 opacity-60 grayscale"
+                  }`}
+                >
                   <div className="w-full h-24 bg-white rounded-md mb-2 p-2 flex flex-col gap-2 shadow-inner border">
                     <div className="w-1/2 h-2 bg-slate-200 rounded-full" />
                     <div className="w-full h-full bg-slate-50 rounded border border-slate-200" />
                   </div>
-                  <p className="text-center font-bold text-sm">Tema Claro</p>
-                  <p className="text-center text-xs text-muted-foreground mt-1">Muy brillante (Próximamente)</p>
-                </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Sun className="w-4 h-4" />
+                    <p className="font-bold text-sm">Tema Claro</p>
+                  </div>
+                  {theme === "light" && (
+                    <p className="text-center text-xs text-primary mt-1">Activo</p>
+                  )}
+                </button>
               </div>
             </CardContent>
           </Card>
