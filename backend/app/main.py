@@ -21,6 +21,9 @@ from infrastructure.adapters.output.postgres.teacher_repository_impl import Teac
 from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
 from application.services.ai_service_impl import AIServiceImpl
 from application.services.ai_recommender import RecommendationService
+from application.services.student_predictor import StudentPredictor
+from application.services.intelligent_tutor import IntelligentTutor
+from infrastructure.adapters.output.mongo.behavioral_repository import BehavioralRepository
 from application.useCases.register_user import RegisterUserUseCase
 from application.useCases.get_recommendations import GetRecommendationsUseCase
 from application.useCases.enroll_student import EnrollStudentUseCase
@@ -317,6 +320,9 @@ enrollment_repository = EnrollmentRepositoryImpl()
 teacher_repository = TeacherRepositoryImpl()
 event_repository = EventRepository()
 ai_service = AIServiceImpl()
+behavioral_repo = BehavioralRepository()
+student_predictor = StudentPredictor()
+intelligent_tutor = IntelligentTutor(predictor=student_predictor)
 
 # ============================================
 # Routes - Health
@@ -541,6 +547,390 @@ async def predict_performance(
     }
 
 # ============================================
+# Routes - AI Analytics (Predictive System for Teachers)
+# ============================================
+
+class TutorAskRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    exercise_id: Optional[int] = None
+    module_id: Optional[int] = None
+    history: Optional[list] = []
+
+class TutorHintRequest(BaseModel):
+    exercise_id: int
+    module_id: Optional[int] = None
+
+class TutorExplainRequest(BaseModel):
+    concept: str
+    module_id: Optional[int] = None
+
+class AnalyticsFilter(BaseModel):
+    module_id: Optional[int] = None
+    days: int = 30
+
+@app.get("/api/analytics/student/{student_id}/metrics", tags=["AI Analytics"])
+async def get_student_analytics(
+    student_id: int,
+    token_data: TokenData = Depends(verify_teacher),
+):
+    """Get full predictive metrics for a specific student"""
+    profile = await behavioral_repo.get_student_behavioral_profile(student_id)
+    metrics = await student_predictor.predict_metrics(profile)
+    insights = await student_predictor.get_insights(profile)
+
+    return {
+        "success": True,
+        "student_id": student_id,
+        "behavioral_profile": profile,
+        "predictions": metrics,
+        "insights": insights,
+    }
+
+@app.get("/api/analytics/class/predictions", tags=["AI Analytics"])
+async def get_class_predictions(
+    days: int = 30,
+    module_id: Optional[int] = None,
+    token_data: TokenData = Depends(verify_teacher),
+):
+    """Get predictions for all students in the teacher's classes"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+
+    with PostgresConnection.get_cursor() as cursor:
+        if module_id:
+            cursor.execute("""
+                SELECT DISTINCT e.student_id FROM enrollments e
+                JOIN modules m ON e.module_id = m.id
+                WHERE m.teacher_id = %s AND e.module_id = %s
+                  AND e.status IN ('active', 'completed')
+            """, (token_data.user_id, module_id))
+        else:
+            cursor.execute("""
+                SELECT DISTINCT e.student_id FROM enrollments e
+                JOIN modules m ON e.module_id = m.id
+                WHERE m.teacher_id = %s AND e.status IN ('active', 'completed')
+            """, (token_data.user_id,))
+        student_rows = cursor.fetchall()
+
+    if not student_rows:
+        return {"success": True, "students": [], "summary": {}}
+
+    results = []
+    for (sid,) in student_rows:
+        profile = await behavioral_repo.get_student_behavioral_profile(sid)
+        metrics = await student_predictor.predict_metrics(profile)
+        results.append({
+            "student_id": sid,
+            **metrics,
+        })
+
+    classification = await student_predictor.classify_students([
+        await behavioral_repo.get_student_behavioral_profile(r["student_id"])
+        for r in results
+    ])
+
+    avg_dropout = sum(r["dropout_risk"] for r in results) / len(results) if results else 0
+    avg_performance = sum(r["performance_score"] for r in results) / len(results) if results else 0
+    avg_engagement = sum(r["engagement_score"] for r in results) / len(results) if results else 0
+
+    return {
+        "success": True,
+        "students": results,
+        "summary": {
+            "total_students": len(results),
+            "avg_dropout_risk": round(avg_dropout, 4),
+            "avg_performance": round(avg_performance, 4),
+            "avg_engagement": round(avg_engagement, 4),
+            "at_risk_count": len(classification["at_risk"]),
+            "excellent_count": len(classification["excellent"]),
+        },
+        "classification": classification,
+    }
+
+@app.get("/api/analytics/student/{student_id}/risk-factors", tags=["AI Analytics"])
+async def get_student_risk_factors(
+    student_id: int,
+    token_data: TokenData = Depends(verify_teacher),
+):
+    """Get detailed risk factors for a student"""
+    profile = await behavioral_repo.get_student_behavioral_profile(student_id)
+    insights = await student_predictor.get_insights(profile)
+
+    risk_factors = []
+    if profile["session_days_30d"] < 3:
+        risk_factors.append({
+            "factor": "poca_frecuencia",
+            "severity": "alta",
+            "description": "El estudiante ha accedido menos de 3 días en el último mes.",
+        })
+    if profile["error_rate"] > 0.4:
+        risk_factors.append({
+            "factor": "alta_tasa_error",
+            "severity": "alta",
+            "description": f"Tasa de error del {round(profile['error_rate'] * 100)}% en sus intentos.",
+        })
+    if profile["frustration_signals_30d"] > 5:
+        risk_factors.append({
+            "factor": "frustracion_frecuente",
+            "severity": "media",
+            "description": f"{profile['frustration_signals_30d']} señales de frustración en 30 días.",
+        })
+    if profile["total_exercise_attempts_30d"] < 5:
+        risk_factors.append({
+            "factor": "poca_practica",
+            "severity": "media",
+            "description": "Menos de 5 intentos de ejercicios en el último mes.",
+        })
+    if profile["engagement_score"] < 0.3:
+        risk_factors.append({
+            "factor": "bajo_engagement",
+            "severity": "alta",
+            "description": f"Puntuación de engagement muy baja: {profile['engagement_score']}.",
+        })
+
+    return {
+        "success": True,
+        "student_id": student_id,
+        "risk_factors": risk_factors,
+        "insights": insights,
+        "profile_summary": {
+            k: profile[k] for k in [
+                "session_days_30d", "total_time_minutes_30d",
+                "total_exercise_attempts_30d", "error_rate",
+                "frustration_signals_30d", "engagement_score",
+            ]
+        },
+    }
+
+@app.get("/api/analytics/dashboard", tags=["AI Analytics"])
+async def get_analytics_dashboard(
+    days: int = 30,
+    token_data: TokenData = Depends(verify_teacher),
+):
+    """Get the full analytics dashboard for teachers"""
+    class_preds = await get_class_predictions(days=days, token_data=token_data)
+
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    try:
+        db = behavioral_repo.get_db()
+
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        daily_activity = list(db.behavioral_events.aggregate([
+            {"$match": {"timestamp": {"$gte": week_ago}}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"_id": 1}},
+        ]))
+
+        frustration_trend = list(db.frustration_signals.aggregate([
+            {"$match": {"timestamp": {"$gte": week_ago}}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"_id": 1}},
+        ]))
+    except Exception as e:
+        daily_activity = []
+        frustration_trend = []
+        print(f"[WARN] MongoDB analytics fetch: {e}")
+
+    return {
+        "success": True,
+        "class_predictions": class_preds,
+        "daily_activity": daily_activity,
+        "frustration_trend": frustration_trend,
+    }
+
+# ============================================
+# Routes - Intelligent Tutor (Conversational AI for Students)
+# ============================================
+
+@app.post("/api/tutor/ask", tags=["Intelligent Tutor"])
+async def tutor_ask(
+    request: TutorAskRequest,
+    token_data: Optional[TokenData] = Depends(verify_token),
+):
+    """Ask the intelligent tutor a question (with Dialogflow fallback)"""
+    user_id = token_data.user_id if token_data else None
+    session_id = request.session_id or f"tutor_{user_id or 'anon'}"
+
+    student_profile = None
+    if user_id:
+        student_profile = await behavioral_repo.get_student_behavioral_profile(user_id)
+        metrics = await student_predictor.predict_metrics(student_profile)
+        student_profile.update(metrics)
+
+    dialogflow_result = None
+    try:
+        dialogflow_result = await ai_service.chat_with_dialogflow(session_id, request.message)
+    except Exception as e:
+        print(f"[Tutor] Dialogflow fallback trigger: {e}")
+
+    result = await intelligent_tutor.generate_response(
+        message=request.message,
+        student_profile=student_profile,
+        exercise_data={"exercise_id": request.exercise_id, "module_id": request.module_id},
+        dialogflow_result=dialogflow_result,
+    )
+
+    try:
+        db = behavioral_repo.get_db()
+        db.tutor_interactions.insert_one({
+            "user_id": user_id or 0,
+            "session_id": session_id,
+            "message": request.message,
+            "response": result["response"],
+            "source": result.get("source", "tutor"),
+            "intent": result.get("intent", "unknown"),
+            "student_level": result.get("student_level", "beginner"),
+            "timestamp": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        print(f"[Tutor] Log error: {e}")
+
+    return {
+        "success": True,
+        **result,
+        "session_id": session_id,
+        "user_id": user_id,
+    }
+
+@app.post("/api/tutor/hint", tags=["Intelligent Tutor"])
+async def tutor_hint(
+    request: TutorHintRequest,
+    token_data: TokenData = Depends(verify_token),
+):
+    """Get a contextual hint for an exercise"""
+    student_profile = None
+    try:
+        student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
+        metrics = await student_predictor.predict_metrics(student_profile)
+        student_profile.update(metrics)
+    except Exception:
+        pass
+
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    exercise_data = None
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(
+            "SELECT id, title, description, instructions, difficulty FROM exercises WHERE id = %s",
+            (request.exercise_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            exercise_data = {
+                "exercise_id": row[0], "title": row[1],
+                "description": row[2], "instructions": row[3],
+                "difficulty": row[4],
+            }
+
+    hint = await intelligent_tutor.generate_hint(
+        request.exercise_id, exercise_data, student_profile,
+    )
+
+    await behavioral_repo.log_exercise_action(
+        token_data.user_id, request.exercise_id, request.module_id or 0,
+        "hint_requested",
+    )
+
+    return {
+        "success": True,
+        "hint": hint,
+        "exercise": exercise_data,
+    }
+
+@app.post("/api/tutor/explain", tags=["Intelligent Tutor"])
+async def tutor_explain(
+    request: TutorExplainRequest,
+    token_data: Optional[TokenData] = Depends(verify_token),
+):
+    """Explain a programming or robotics concept"""
+    student_profile = None
+    if token_data:
+        try:
+            student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
+            metrics = await student_predictor.predict_metrics(student_profile)
+            student_profile.update(metrics)
+        except Exception:
+            pass
+
+    intent_data = intelligent_tutor.detect_intent(request.concept)
+    level = await intelligent_tutor.get_student_level(student_profile)
+
+    concept = intent_data.get("concept") or intelligent_tutor._detect_concept(request.concept)
+    if concept:
+        explanation = intelligent_tutor._get_adapted_explanation(concept, level)
+    else:
+        explanation = f"No encontré información específica sobre '{request.concept}'. ¿Puedes ser más específico? Puedo explicarte sobre variables, funciones, bucles, condicionales, listas, robótica y Python."
+
+    return {
+        "success": True,
+        "concept": concept or request.concept,
+        "explanation": explanation,
+        "student_level": level,
+    }
+
+@app.get("/api/tutor/student-level", tags=["Intelligent Tutor"])
+async def tutor_student_level(
+    token_data: TokenData = Depends(verify_token),
+):
+    """Get the detected level for the current student"""
+    student_profile = None
+    try:
+        student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
+        metrics = await student_predictor.predict_metrics(student_profile)
+        student_profile.update(metrics)
+    except Exception:
+        pass
+
+    level = await intelligent_tutor.get_student_level(student_profile)
+
+    return {
+        "success": True,
+        "user_id": token_data.user_id,
+        "student_level": level,
+        "profile_summary": {
+            "passed_exercises_30d": student_profile.get("passed_exercises_30d", 0) if student_profile else 0,
+            "performance_score": student_profile.get("performance_score", 0.5) if student_profile else 0.5,
+            "engagement_score": student_profile.get("engagement_score", 0.5) if student_profile else 0.5,
+        } if student_profile else None,
+    }
+
+@app.post("/api/tutor/feedback", tags=["Intelligent Tutor"])
+async def tutor_feedback(
+    request: Request,
+    token_data: TokenData = Depends(verify_token),
+):
+    """Log tutor feedback (helpful/not helpful)"""
+    body = await request.json()
+    helpful = body.get("helpful", True)
+    message = body.get("message", "")
+
+    try:
+        db = behavioral_repo.get_db()
+        db.tutor_feedback.insert_one({
+            "user_id": token_data.user_id,
+            "helpful": helpful,
+            "message": message,
+            "timestamp": datetime.now(timezone.utc),
+        })
+    except Exception as e:
+        print(f"[Tutor] Feedback log error: {e}")
+
+    return {"success": True}
+
+@app.post("/api/analytics/train", tags=["AI Analytics"])
+async def train_predictive_models(
+    token_data: TokenData = Depends(verify_admin),
+):
+    """Retrain predictive models with real data from MongoDB"""
+    result = student_predictor.train_on_real_data(behavioral_repo)
+    return {"success": True, "training_result": result}
+
+# ============================================
 # Routes - Chatbot (Dialogflow)
 # ============================================
 
@@ -548,29 +938,98 @@ async def predict_performance(
 async def chat_public(request: PublicChatRequest):
     """Chat with Dialogflow agent (no auth required, for anonymous users)"""
     session_id = request.session_id or f"anon_{datetime.now(timezone.utc).timestamp()}"
-    response = await ai_service.chat_with_dialogflow(session_id, request.message)
-    return {"success": True, "message": response, "session_id": session_id}
+
+    dialogflow_response = None
+    try:
+        dialogflow_response = await ai_service.chat_with_dialogflow(session_id, request.message)
+    except Exception:
+        pass
+
+    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response:
+        return {"success": True, "message": dialogflow_response, "session_id": session_id}
+
+    tutor_result = await intelligent_tutor.generate_response(
+        message=request.message,
+        student_profile=None,
+        dialogflow_result=dialogflow_response,
+    )
+
+    return {
+        "success": True,
+        "message": tutor_result["response"],
+        "session_id": session_id,
+        "source": tutor_result.get("source", "tutor"),
+    }
 
 @app.post("/api/chatbot", tags=["Chatbot"])
 async def chat(
     request: ChatRequest,
     token_data: TokenData = Depends(verify_token)
 ):
-    """Chat with Dialogflow agent"""
+    """Chat with Dialogflow agent with intelligent fallback"""
     session_id = f"user_{token_data.user_id}_session"
-    
-    response = await ai_service.chat_with_dialogflow(session_id, request.message)
-    
+
+    student_profile = None
+    try:
+        student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
+        metrics = await student_predictor.predict_metrics(student_profile)
+        student_profile.update(metrics)
+    except Exception:
+        pass
+
+    dialogflow_response = None
+    try:
+        dialogflow_response = await ai_service.chat_with_dialogflow(session_id, request.message)
+    except Exception:
+        pass
+
+    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response:
+        await event_repository.log_chat_interaction(
+            token_data.user_id,
+            request.message,
+            dialogflow_response,
+            session_id
+        )
+        return {
+            "success": True,
+            "message": dialogflow_response,
+            "source": "dialogflow",
+        }
+
+    tutor_result = await intelligent_tutor.generate_response(
+        message=request.message,
+        student_profile=student_profile,
+        dialogflow_result=dialogflow_response,
+    )
+
+    response_text = tutor_result["response"]
+
     await event_repository.log_chat_interaction(
         token_data.user_id,
         request.message,
-        response,
+        response_text,
         session_id
     )
-    
+
+    try:
+        db = behavioral_repo.get_db()
+        db.tutor_interactions.insert_one({
+            "user_id": token_data.user_id,
+            "session_id": session_id,
+            "message": request.message,
+            "response": response_text,
+            "source": tutor_result.get("source", "tutor"),
+            "intent": tutor_result.get("intent", "unknown"),
+            "student_level": tutor_result.get("student_level", "beginner"),
+            "timestamp": datetime.now(timezone.utc),
+        })
+    except Exception:
+        pass
+
     return {
         "success": True,
-        "message": response
+        "message": response_text,
+        "source": tutor_result.get("source", "tutor"),
     }
 
 # ============================================
@@ -1912,41 +2371,34 @@ async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
 
 @app.get("/api/dashboard/admin", tags=["Admin"])
 async def get_admin_dashboard(token_data: TokenData = Depends(verify_admin)):
-    """Get admin dashboard stats - synced with DB"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    """Get admin dashboard stats - synced with DB via stored procedures"""
+    from infrastructure.adapters.output.postgres.procedure_runner import ProcedureRunner
     
-    stats = {"totalUsers": 0, "activeStudents": 0, "activeTeachers": 0, "totalModules": 0}
-    stats["pendingTeachers"] = 0
-    stats["pendingReviews"] = 0
-    stats["totalAchievements"] = 0
+    stats_data = ProcedureRunner.get_admin_stats()
+    stats = {
+        "totalUsers": 0, "activeStudents": 0, "activeTeachers": 0,
+        "totalModules": 0, "publishedModules": 0,
+        "pendingTeachers": 0, "pendingReviews": 0,
+        "totalEnrollments": 0, "totalAchievements": 0, "totalExercises": 0,
+    }
+    if stats_data:
+        stats = {
+            "totalUsers": stats_data.get("total_users", 0),
+            "activeStudents": stats_data.get("active_students", 0),
+            "activeTeachers": stats_data.get("active_teachers", 0),
+            "totalModules": stats_data.get("total_modules", 0),
+            "publishedModules": stats_data.get("published_modules", 0),
+            "pendingTeachers": stats_data.get("pending_teachers", 0),
+            "pendingReviews": stats_data.get("pending_reviews", 0),
+            "totalEnrollments": stats_data.get("total_enrollments", 0),
+            "totalAchievements": stats_data.get("total_achievements", 0),
+            "totalExercises": stats_data.get("total_exercises", 0),
+        }
     
-    query = """
-        SELECT
-            (SELECT COUNT(*) FROM users) as total_users,
-            (SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = TRUE) as active_students,
-            (SELECT COUNT(*) FROM users WHERE role = 'teacher' AND is_active = TRUE) as active_teachers,
-            (SELECT COUNT(*) FROM modules) as total_modules,
-            (SELECT COUNT(*) FROM users WHERE teacher_request_status = 'pending') as pending_teachers,
-            (SELECT COUNT(*) FROM modules WHERE status = 'pending_review') as pending_reviews,
-            (SELECT COUNT(*) FROM user_achievements) as total_achievements
-    """
-    with PostgresConnection.get_cursor() as cursor:
-        cursor.execute(query)
-        row = cursor.fetchone()
-        if row:
-            stats["totalUsers"] = row[0]
-            stats["activeStudents"] = row[1]
-            stats["activeTeachers"] = row[2]
-            stats["totalModules"] = row[3]
-            stats["pendingTeachers"] = row[4]
-            stats["pendingReviews"] = row[5]
-            stats["totalAchievements"] = row[6]
-    
-    # Sync with MongoDB - save admin stats snapshot
+    # Sync with MongoDB
     try:
-        event_repository.db["admin_stats"].insert_one({
-            "timestamp": datetime.now(timezone.utc),
-            **stats
+        event_repository.get_db()["admin_stats"].insert_one({
+            "timestamp": datetime.now(timezone.utc), **stats
         })
     except:
         pass
@@ -1972,82 +2424,54 @@ async def get_audit_logs(limit: int = 50, token_data: TokenData = Depends(verify
 # ============================================
 
 @app.get("/api/admin/modules", tags=["Admin"])
-async def admin_list_modules(token_data: TokenData = Depends(verify_admin)):
-    """List all modules for admin management (including unpublished, pending)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
-    query = """
-        SELECT m.id, m.title, m.description, m.teacher_id, m.status, m."order",
-               m.is_published, m.is_global, m.difficulty, m.created_at,
-               u.full_name as teacher_name
-        FROM modules m
-        LEFT JOIN users u ON m.teacher_id = u.id
-        ORDER BY m."order" ASC, m.created_at DESC
-    """
-    modules = []
-    with PostgresConnection.get_cursor() as cursor:
-        cursor.execute(query)
-        for row in cursor.fetchall():
-            modules.append({
-                "id": row[0], "title": row[1], "description": row[2],
-                "teacher_id": row[3], "status": row[4], "order": row[5],
-                "is_published": row[6], "is_global": row[7], "difficulty": row[8],
-                "created_at": row[9].isoformat() if row[9] else None,
-                "teacher_name": row[10]
-            })
-    return {"success": True, "modules": modules}
+async def admin_list_modules(
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    token_data: TokenData = Depends(verify_admin),
+):
+    """List all modules for admin management (editor view, not student view).
+    Shows ALL modules with status, lesson count, exercise count, enrollment count.
+    Supports filtering by status and search by title."""
+    from infrastructure.adapters.output.postgres.procedure_runner import ProcedureRunner
+
+    modules = ProcedureRunner.get_admin_modules(status_filter=status, search=search)
+    for m in modules:
+        if m.get("created_at") and hasattr(m["created_at"], "isoformat"):
+            m["created_at"] = m["created_at"].isoformat()
+        else:
+            m["created_at"] = str(m["created_at"]) if m.get("created_at") else None
+
+    return {
+        "success": True,
+        "modules": modules,
+        "total": len(modules),
+    }
 
 @app.get("/api/admin/modules/{module_id}", tags=["Admin"])
 async def admin_get_module(module_id: int, token_data: TokenData = Depends(verify_admin)):
-    """Get full module details with exercises for admin review"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
-    
-    # Get module
-    query_module = """
-        SELECT m.id, m.title, m.description, m.theory_content, m.teacher_id, 
-               m.status, m."order", m.is_published, m.is_global, m.difficulty, 
-               m.lesson_count, m.created_at, u.full_name as teacher_name
-        FROM modules m
-        LEFT JOIN users u ON m.teacher_id = u.id
-        WHERE m.id = %s
-    """
-    
-    with PostgresConnection.get_cursor() as cursor:
-        cursor.execute(query_module, (module_id,))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Module not found")
-        
-        mod = {
-            "id": row[0], "title": row[1], "description": row[2],
-            "theory_content": row[3], "teacher_id": row[4], "status": row[5],
-            "order": row[6], "is_published": row[7], "is_global": row[8],
-            "difficulty": row[9], "lesson_count": row[10],
-            "created_at": row[11].isoformat() if row[11] else None,
-            "teacher_name": row[12]
-        }
-        
-        # Get lessons
-        cursor.execute("""
-            SELECT id, title, theory_content, "order" 
-            FROM lessons WHERE module_id = %s ORDER BY "order" ASC
-        """, (module_id,))
-        mod["lessons"] = [{
-            "id": l[0], "title": l[1], "theory_content": l[2], "order": l[3]
-        } for l in cursor.fetchall()]
-        
-        # Get exercises
-        cursor.execute("""
-            SELECT id, title, description, instructions, difficulty, points, "order",
-                   solution_output, solution_type
-            FROM exercises WHERE module_id = %s ORDER BY "order" ASC
-        """, (module_id,))
-        mod["exercises"] = [{
-            "id": e[0], "title": e[1], "description": e[2], "instructions": e[3],
-            "difficulty": e[4], "points": e[5], "order": e[6],
-            "solution_output": e[7], "solution_type": e[8]
-        } for e in cursor.fetchall()]
-    
-    return {"success": True, "module": mod}
+    """Get full module details with lessons and exercises for admin editing.
+    Admin sees ALL modules as an editor, not as a student consumer."""
+    from infrastructure.adapters.output.postgres.procedure_runner import ProcedureRunner
+    import json
+
+    mod_data = ProcedureRunner.get_module_detail_for_admin(module_id)
+    if not mod_data:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    if mod_data.get("created_at") and hasattr(mod_data["created_at"], "isoformat"):
+        mod_data["created_at"] = mod_data["created_at"].isoformat()
+
+    for field in ["lessons", "exercises"]:
+        val = mod_data.get(field)
+        if isinstance(val, str):
+            try:
+                mod_data[field] = json.loads(val)
+            except:
+                mod_data[field] = []
+        elif val is None:
+            mod_data[field] = []
+
+    return {"success": True, "module": mod_data}
 
 @app.post("/api/admin/modules/{module_id}/approve", tags=["Admin"])
 async def admin_approve_module(module_id: int, token_data: TokenData = Depends(verify_admin)):

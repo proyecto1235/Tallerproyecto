@@ -1,11 +1,10 @@
-version: "3.9"
 
 services:
   # ============================================
   # PostgreSQL Database
   # ============================================
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16
     container_name: robolearn_postgres
     environment:
       POSTGRES_USER: postgres
@@ -17,6 +16,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/scripts/001-create-tables.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./backend/scripts/002-seed-data.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./backend/scripts/004-create-procedures.sql:/docker-entrypoint-initdb.d/03-procedures.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -30,7 +30,7 @@ services:
   # MongoDB Database
   # ============================================
   mongo:
-    image: mongo:7.0
+    image: mongo:7
     container_name: robolearn_mongo
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin

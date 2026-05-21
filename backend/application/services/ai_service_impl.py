@@ -85,33 +85,76 @@ class AIServiceImpl(AIService):
     
     async def predict_student_performance(self, student_id: int, module_id: int) -> float:
         """
-        Predict student performance using ML
+        Predict student performance using real data from behavioral repository
         Returns prediction score between 0.0 and 1.0
         """
         try:
-            # Create feature vector for prediction
-            feature_vector = np.array([[student_id, module_id]])
-            
-            # This is a simplified version - in production, you'd use a trained model
-            # For now, return a random prediction
-            prediction = np.random.random()
-            return float(prediction)
+            from infrastructure.adapters.output.mongo.behavioral_repository import BehavioralRepository
+            from application.services.student_predictor import StudentPredictor
+
+            behavioral = BehavioralRepository()
+            profile = await behavioral.get_student_behavioral_profile(student_id)
+            predictor = StudentPredictor()
+            metrics = await predictor.predict_metrics(profile)
+            return metrics.get("performance_score", 0.5)
         except Exception as e:
             print(f"Error predicting performance: {e}")
+            try:
+                from infrastructure.adapters.output.postgres.connection import PostgresConnection
+                with PostgresConnection.get_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT COALESCE(AVG(ea.score), 0) / 100.0
+                        FROM exercise_attempts ea
+                        JOIN exercises e ON e.id = ea.exercise_id
+                        WHERE ea.student_id = %s AND e.module_id = %s
+                    """, (student_id, module_id))
+                    row = cursor.fetchone()
+                    if row and row[0] is not None:
+                        return float(row[0])
+            except Exception:
+                pass
             return 0.5
     
     async def detect_learning_path(self, student_id: int) -> Dict[str, Any]:
         """
-        Detect optimal learning path for student
-        Uses clustering and pattern analysis
+        Detect optimal learning path for student based on real progress data
         """
         try:
+            from infrastructure.adapters.output.postgres.connection import PostgresConnection
+
+            with PostgresConnection.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT m.id, m.title, m.difficulty, m."order",
+                           COALESCE(p.percentage, 0) as progress,
+                           CASE WHEN e.status = 'completed' THEN TRUE ELSE FALSE END as completed
+                    FROM modules m
+                    LEFT JOIN enrollments e ON e.module_id = m.id AND e.student_id = %s
+                    LEFT JOIN progress p ON p.module_id = m.id AND p.student_id = %s
+                    WHERE m.is_published = TRUE AND m.status = 'approved'
+                    ORDER BY m."order" ASC
+                """, (student_id, student_id))
+                rows = cursor.fetchall()
+
+            if not rows:
+                return {"student_id": student_id, "modules": [], "recommended_path": "standard"}
+
+            modules_list = []
+            next_modules = []
+            for r in rows:
+                mod = {"id": r[0], "title": r[1], "difficulty": r[2], "order": r[3], "progress": float(r[4]), "completed": r[5]}
+                modules_list.append(mod)
+                if float(r[4]) < 100.0 and not r[5]:
+                    next_modules.append(mod)
+
             return {
                 "student_id": student_id,
-                "recommended_path": "beginner_to_advanced",
-                "confidence": 0.85,
-                "modules": [1, 2, 3, 4, 5],
-                "estimated_duration_days": 30,
+                "recommended_path": "custom",
+                "confidence": 0.9,
+                "modules": [m["id"] for m in modules_list],
+                "next_modules": [m["id"] for m in next_modules[:3]],
+                "completed_count": sum(1 for m in modules_list if m["completed"]),
+                "total_modules": len(modules_list),
+                "estimated_duration_days": max(1, (len(modules_list) - sum(1 for m in modules_list if m["completed"])) * 7),
             }
         except Exception as e:
             print(f"Error detecting learning path: {e}")

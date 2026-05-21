@@ -24,6 +24,7 @@ import {
   X,
   Flame,
   Star,
+  Brain,
 } from "lucide-react"
 import { useState } from "react"
 
@@ -46,6 +47,7 @@ const teacherLinks = [
   { href: "/dashboard/my-classes", label: "Mis Clases", icon: Users },
   { href: "/dashboard/students", label: "Estudiantes", icon: GraduationCap },
   { href: "/dashboard/metrics", label: "Metricas", icon: BarChart3 },
+  { href: "/dashboard/analytics", label: "Analitica IA", icon: Brain },
   { href: "/dashboard/alerts", label: "Alertas IA", icon: Bell },
   { href: "/dashboard/challenges", label: "Retos", icon: Trophy },
   { href: "/dashboard/settings", label: "Ajustes", icon: Settings },

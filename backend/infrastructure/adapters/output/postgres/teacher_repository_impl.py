@@ -48,8 +48,9 @@ class TeacherRepositoryImpl(TeacherRepository):
         return students
 
     async def get_teacher_metrics(self, teacher_id: int) -> Dict[str, Any]:
+        from infrastructure.adapters.output.postgres.procedure_runner import ProcedureRunner
+
         with PostgresConnection.get_cursor() as cursor:
-            # Total students
             cursor.execute("""
                 SELECT COUNT(DISTINCT e.student_id)
                 FROM enrollments e
@@ -58,7 +59,6 @@ class TeacherRepositoryImpl(TeacherRepository):
             """, (teacher_id,))
             total_students = cursor.fetchone()[0] or 0
 
-            # Average progress
             cursor.execute("""
                 SELECT AVG(COALESCE(p.percentage, 0))
                 FROM enrollments e
@@ -68,8 +68,7 @@ class TeacherRepositoryImpl(TeacherRepository):
             """, (teacher_id,))
             avg_row = cursor.fetchone()
             avg_progress = float(avg_row[0]) if avg_row and avg_row[0] is not None else 0.0
-            
-            # Completion rate
+
             cursor.execute("""
                 SELECT 
                     COUNT(CASE WHEN p.percentage = 100 THEN 1 END)::float / NULLIF(COUNT(e.id), 0) * 100
@@ -80,8 +79,7 @@ class TeacherRepositoryImpl(TeacherRepository):
             """, (teacher_id,))
             comp_row = cursor.fetchone()
             completion_rate = float(comp_row[0]) if comp_row and comp_row[0] is not None else 0.0
-            
-            # Progress by course
+
             cursor.execute("""
                 SELECT m.title, AVG(COALESCE(p.percentage, 0)) as avg_prog
                 FROM modules m
@@ -92,59 +90,29 @@ class TeacherRepositoryImpl(TeacherRepository):
                 ORDER BY avg_prog DESC
             """, (teacher_id,))
             course_progress = [{"name": row[0], "progress": float(row[1]) if row[1] is not None else 0.0} for row in cursor.fetchall()]
-            
-            # Performance distribution (e.g., how many students are in 0-25, 26-50, etc.)
-            cursor.execute("""
-                SELECT 
-                    CASE 
-                        WHEN COALESCE(p.percentage, 0) < 25 THEN 'Bajo (0-24%%)'
-                        WHEN COALESCE(p.percentage, 0) < 50 THEN 'Regular (25-49%%)'
-                        WHEN COALESCE(p.percentage, 0) < 75 THEN 'Bueno (50-74%%)'
-                        ELSE 'Excelente (75-100%%)'
-                    END as bracket,
-                    COUNT(*) as count
-                FROM enrollments e
-                JOIN modules m ON e.module_id = m.id
-                LEFT JOIN progress p ON e.student_id = p.student_id AND e.module_id = p.module_id
-                WHERE m.teacher_id = %s
-                GROUP BY bracket
-            """, (teacher_id,))
-            
-            # Initialize with all brackets
-            brackets_dict = {
-                'Bajo (0-24%)': 0,
-                'Regular (25-49%)': 0,
-                'Bueno (50-74%)': 0,
-                'Excelente (75-100%)': 0
-            }
-            for row in cursor.fetchall():
-                brackets_dict[row[0]] = row[1]
-                
-            performance_dist = [{"name": k, "value": v} for k, v in brackets_dict.items()]
 
-        # Generate some mock weekly activity if no real event log aggregation exists for PG
-        weekly_activity = [
-            {"day": "Lun", "activos": 5},
-            {"day": "Mar", "activos": 12},
-            {"day": "Mié", "activos": 8},
-            {"day": "Jue", "activos": 15},
-            {"day": "Vie", "activos": 10},
-            {"day": "Sáb", "activos": 2},
-            {"day": "Dom", "activos": 4},
-        ]
+        performance_dist = ProcedureRunner.get_student_performance_distribution(teacher_id)
+
+        weekly_activity_raw = ProcedureRunner.get_weekly_activity(teacher_id)
+        day_names = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        weekly_activity = []
+        for day in day_names:
+            found = next((w for w in weekly_activity_raw if w.get("day_name") == day), None)
+            weekly_activity.append({"day": day, "activos": found["active_count"] if found else 0})
 
         return {
             "total_students": total_students,
             "avg_progress": round(avg_progress, 1),
             "completion_rate": round(completion_rate, 1),
-            "active_students": total_students, # Simplification
+            "active_students": total_students,
             "course_progress": course_progress,
             "performance_distribution": performance_dist,
             "weekly_activity": weekly_activity,
             "insights": [
                 f"Tienes {total_students} estudiantes en total.",
                 f"El progreso promedio es {round(avg_progress, 1)}%.",
-                f"Tasa de completitud: {round(completion_rate, 1)}%."
+                f"Tasa de completitud: {round(completion_rate, 1)}%.",
+                f"Rendimiento alto: {sum(1 for d in performance_dist if 'Alto' in d.get('name', ''))} estudiantes.",
             ]
         }
 
