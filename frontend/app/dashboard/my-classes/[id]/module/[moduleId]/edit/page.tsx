@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,9 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, ArrowLeft, Save, Plus, Trash, Code, Eye, Edit3, GripVertical, Play } from "lucide-react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { Loader2, ArrowLeft, Save, Plus, Trash, Code, Eye, Edit3, GripVertical, Play, Hash } from "lucide-react"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -24,6 +23,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { InlineExercise } from "@/components/interactive/InlineExercise"
+import { TheoryWithExercises } from "@/components/interactive/theory-with-exercises"
 
 const STORAGE_KEY = "robolearn_teacher_classes"
 
@@ -61,6 +61,7 @@ export default function ModuleEditPage() {
   const [exercises, setExercises] = useState<ClassExercise[]>([])
   const [showAddExercise, setShowAddExercise] = useState(false)
   const [editingExercise, setEditingExercise] = useState<ClassExercise | null>(null)
+  const editorViewRef = useRef<any>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -103,6 +104,19 @@ export default function ModuleEditPage() {
       }
     }
     setSaving(false)
+  }
+
+  const insertExerciseTag = () => {
+    const tag = "\n\n[ejercicio]\n\n"
+    const view = editorViewRef.current
+    if (view) {
+      view.dispatch({
+        changes: { from: view.state.selection.main.head, insert: tag }
+      })
+    } else {
+      setContent(prev => prev + tag)
+    }
+    toast.success("Tag [ejercicio] insertado — el ejercicio #" + (exercises.length + 1) + " aparecerá aquí")
   }
 
   const addExercise = () => {
@@ -198,18 +212,31 @@ export default function ModuleEditPage() {
                 </TabsList>
                 <TabsContent value="editor">
                   <div className="border border-border rounded-md overflow-hidden">
+                    <div className="flex items-center justify-between bg-muted/50 px-3 py-2 border-b border-border">
+                      <span className="text-xs text-muted-foreground">
+                        Usa <code className="bg-muted px-1 rounded text-primary font-mono">[ejercicio]</code> para colocar ejercicios dentro del contenido
+                      </span>
+                      <Button variant="outline" size="sm" onClick={insertExerciseTag}>
+                        <Hash className="w-4 h-4 mr-1" /> Insertar ejercicio
+                      </Button>
+                    </div>
                     <CodeMirror
                       value={content}
                       height="500px"
                       theme={oneDark}
                       extensions={[markdown({ base: markdownLanguage, codeLanguages: languages })]}
+                      onCreateEditor={(view) => { editorViewRef.current = view }}
                       onChange={v => setContent(v)}
                     />
                   </div>
                 </TabsContent>
                 <TabsContent value="preview">
-                  <div className="prose prose-invert max-w-none border border-border rounded-md p-6 min-h-[300px] bg-card/80">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                  <div className="border border-border rounded-md p-6 min-h-[300px] bg-card/80">
+                    {exercises.length > 0 ? (
+                      <TheoryWithExercises theory={content} exercises={exercises} />
+                    ) : (
+                      <MarkdownContent content={content} />
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>

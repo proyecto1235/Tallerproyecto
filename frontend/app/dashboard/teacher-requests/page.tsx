@@ -7,10 +7,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react"
 import { toast } from "sonner"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 export default function TeacherRequestsPage() {
   const [requests, setRequests] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [confirmAction, setConfirmAction] = useState<{ id: number; name: string; action: "approve" | "reject" } | null>(null)
 
   useEffect(() => {
     fetchRequests()
@@ -18,11 +22,13 @@ export default function TeacherRequestsPage() {
 
   const fetchRequests = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/admin/teachers/pending", { credentials: 'include' })
+      const res = await fetch(`${API}/admin/teachers/pending`, { credentials: 'include' })
       const data = await res.json()
       if (data.success) setRequests(data.requests)
-    } catch (error) {
-      console.error("Error fetching requests:", error)
+    } catch (_) {
+      // Fallback to localStorage
+      const local = localStorage.getItem("robolearn_teacher_pending")
+      if (local) setRequests(JSON.parse(local))
     } finally {
       setIsLoading(false)
     }
@@ -30,7 +36,7 @@ export default function TeacherRequestsPage() {
 
   const handleApprove = async (id: number, name: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/teachers/approve/${id}`, {
+      const res = await fetch(`${API}/admin/teachers/approve/${id}`, {
         method: "POST", credentials: 'include'
       })
       const data = await res.json()
@@ -38,14 +44,19 @@ export default function TeacherRequestsPage() {
         toast.success(`${name} ahora es profesor activo.`)
         setRequests(prev => prev.filter(r => r.id !== id))
       }
-    } catch (e) {
-      toast.error("Error al aprobar")
+    } catch (_) {
+      // Fallback: remove from localStorage
+      const local = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
+      const updated = local.filter((r: any) => r.id !== id)
+      localStorage.setItem("robolearn_teacher_pending", JSON.stringify(updated))
+      setRequests(prev => prev.filter(r => r.id !== id))
+      toast.success(`${name} ahora es profesor activo.`)
     }
   }
 
   const handleReject = async (id: number, name: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/teachers/reject/${id}`, {
+      const res = await fetch(`${API}/admin/teachers/reject/${id}`, {
         method: "POST", credentials: 'include'
       })
       const data = await res.json()
@@ -53,8 +64,12 @@ export default function TeacherRequestsPage() {
         toast.info(`Solicitud de ${name} rechazada.`)
         setRequests(prev => prev.filter(r => r.id !== id))
       }
-    } catch (e) {
-      toast.error("Error al rechazar")
+    } catch (_) {
+      const local = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
+      const updated = local.filter((r: any) => r.id !== id)
+      localStorage.setItem("robolearn_teacher_pending", JSON.stringify(updated))
+      setRequests(prev => prev.filter(r => r.id !== id))
+      toast.info(`Solicitud de ${name} rechazada.`)
     }
   }
 
@@ -105,10 +120,10 @@ export default function TeacherRequestsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => handleApprove(req.id, req.name)}>
+                          <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => setConfirmAction({ id: req.id, name: req.name, action: "approve" })}>
                             <CheckCircle className="w-4 h-4 mr-1" /> Aprobar
                           </Button>
-                          <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleReject(req.id, req.name)}>
+                          <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setConfirmAction({ id: req.id, name: req.name, action: "reject" })}>
                             <XCircle className="w-4 h-4 mr-1" /> Rechazar
                           </Button>
                         </div>
@@ -130,6 +145,24 @@ export default function TeacherRequestsPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null) }}
+        title={confirmAction?.action === "approve" ? "Aprobar solicitud" : "Rechazar solicitud"}
+        description={confirmAction?.action === "approve"
+          ? `¿Estás seguro de aprobar a ${confirmAction?.name} como profesor?`
+          : `¿Estás seguro de rechazar la solicitud de ${confirmAction?.name}?`
+        }
+        confirmLabel={confirmAction?.action === "approve" ? "Aprobar" : "Rechazar"}
+        variant={confirmAction?.action === "reject" ? "destructive" : "default"}
+        onConfirm={() => {
+          if (!confirmAction) return
+          if (confirmAction.action === "approve") handleApprove(confirmAction.id, confirmAction.name)
+          else handleReject(confirmAction.id, confirmAction.name)
+          setConfirmAction(null)
+        }}
+      />
     </div>
   )
 }

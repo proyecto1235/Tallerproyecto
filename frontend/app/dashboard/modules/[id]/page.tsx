@@ -4,10 +4,8 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Loader2, ArrowLeft, BookOpen, CheckCircle2, Lock, Code, ChevronDown, ChevronRight, Trophy } from "lucide-react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
-import { InlineExercise } from "@/components/interactive/InlineExercise"
+import { Loader2, ArrowLeft, BookOpen, CheckCircle2, Lock, ChevronDown, ChevronRight, Trophy } from "lucide-react"
+import { TheoryWithExercises } from "@/components/interactive/theory-with-exercises"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -242,11 +240,11 @@ export default function ModuleViewPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {isUnlocked && !isCompleted && lesson.passed_exercises === lesson.total_exercises && lesson.total_exercises > 0 && (
+                  {isUnlocked && (
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="text-green-600 border-green-300"
+                      variant="ghost"
+                      className={isCompleted ? "text-green-500" : "text-primary"}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (index + 1 < lessons.length) {
@@ -256,7 +254,8 @@ export default function ModuleViewPage() {
                         }
                       }}
                     >
-                      Continuar <ChevronRight className="w-4 h-4 ml-1" />
+                      {index + 1 < lessons.length ? "Siguiente" : "Finalizar"}
+                      <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   )}
                   {isActive ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -265,34 +264,20 @@ export default function ModuleViewPage() {
 
               {isActive && (
                 <div className="p-4 md:p-6 space-y-6">
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {lesson.theory || "*Contenido teórico próximamente*"}
-                    </ReactMarkdown>
-                  </div>
+                  <TheoryWithExercises
+                    theory={lesson.theory || "*Contenido teórico próximamente*"}
+                    exercises={lesson.exercises || []}
+                    moduleId={numericId}
+                    onComplete={refreshLessonData}
+                  />
 
-                  <div className="space-y-4">
-                    <h4 className="font-semibold flex items-center gap-2">
-                      <Code className="w-4 h-4" /> Ejercicios
-                    </h4>
-                    {(lesson.exercises || []).map((ex: any) => (
-                      <InlineExercise
-                        key={ex.id}
-                        exercise={ex}
-                        moduleId={numericId}
-                        onComplete={refreshLessonData}
-                      />
-                    ))}
-                    {(!lesson.exercises || lesson.exercises.length === 0) && (
-                      <p className="text-sm text-muted-foreground italic">No hay ejercicios en esta lección</p>
-                    )}
-                  </div>
+                  <div className="pipboy-line" />
 
-                  {isCompleted && index + 1 < lessons.length && (
-                    <div className="flex justify-center pt-2">
+                  <div className="flex justify-center gap-3 pt-2">
+                    {index + 1 < lessons.length ? (
                       <Button
                         variant="default"
-                        className="bg-green-600 hover:bg-green-700"
+                        className="bg-primary hover:bg-primary/90"
                         onClick={() => {
                           const nextId = lessons[index + 1].id
                           setUnlockedLessons(prev => new Set([...prev, nextId]))
@@ -301,8 +286,18 @@ export default function ModuleViewPage() {
                       >
                         Continuar a siguiente lección <ChevronRight className="w-4 h-4 ml-2" />
                       </Button>
-                    </div>
-                  )}
+                    ) : (
+                      <Button
+                        size="lg"
+                        className="bg-green-600 hover:bg-green-700"
+                        disabled={completing}
+                        onClick={handleCompleteModule}
+                      >
+                        {completing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trophy className="w-4 h-4 mr-2" />}
+                        {completing ? "Completando..." : "Completar Módulo"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </Card>

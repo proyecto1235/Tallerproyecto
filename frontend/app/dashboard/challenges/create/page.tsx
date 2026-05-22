@@ -9,7 +9,20 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
-import { Trophy, ArrowLeft, Loader2 } from "lucide-react"
+import dynamic from "next/dynamic"
+import { Trophy, ArrowLeft, Loader2, Code } from "lucide-react"
+
+const CodeEditor = dynamic(
+  () => import("@uiw/react-codemirror").then(mod => ({ default: mod.default })),
+  { ssr: false }
+)
+
+const pythonExt = dynamic(
+  () => import("@codemirror/lang-python").then(mod => ({ default: mod.python() })),
+  { ssr: false }
+)
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 export default function CreateChallengePage() {
   const router = useRouter()
@@ -31,6 +44,8 @@ export default function CreateChallengePage() {
     max_attempts: 0
   })
 
+  const updateField = (field: string, value: any) => setFormData(prev => ({ ...prev, [field]: value }))
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -42,7 +57,7 @@ export default function CreateChallengePage() {
         max_attempts: formData.max_attempts || 0
       }
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/challenges`, {
+      const res = await fetch(`${API}/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -63,8 +78,10 @@ export default function CreateChallengePage() {
     }
   }
 
+  const editorTheme = { "&": { backgroundColor: "#1e1e1e", color: "#d4d4d4" } }
+
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-10">
+    <div className="space-y-6 max-w-5xl mx-auto pb-10">
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => router.back()} className="gap-2">
           <ArrowLeft className="h-4 w-4" />
@@ -89,39 +106,50 @@ export default function CreateChallengePage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="title">Título del Reto</Label>
-                <Input id="title" required value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} placeholder="Ej. Cazador de Errores" />
+                <Input id="title" required value={formData.title} onChange={e => updateField("title", e.target.value)} placeholder="Ej. Cazador de Errores" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="deadline">Fecha Límite</Label>
-                <Input id="deadline" type="datetime-local" value={formData.deadline} onChange={e => setFormData({ ...formData, deadline: e.target.value })} />
+                <Input id="deadline" type="datetime-local" value={formData.deadline} onChange={e => updateField("deadline", e.target.value)} />
               </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">Descripción / Instrucciones</Label>
-              <Textarea id="description" required rows={4} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Explica qué debe hacer el estudiante..." />
+              <Textarea id="description" required rows={4} value={formData.description} onChange={e => updateField("description", e.target.value)} placeholder="Explica qué debe hacer el estudiante..." />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="instructions">Instrucciones detalladas para el editor</Label>
-              <Textarea id="instructions" rows={3} value={formData.instructions} onChange={e => setFormData({ ...formData, instructions: e.target.value })} placeholder="# Escribe el código base inicial aquí\n# o deja instrucciones para el estudiante" className="font-mono text-sm" />
+              <Label htmlFor="instrucciones">Instrucciones detalladas (se muestran en el editor del estudiante)</Label>
+              <div className="rounded-lg overflow-hidden border border-border">
+                {typeof window !== "undefined" && (
+                  <CodeEditor
+                    value={formData.instructions}
+                    height="120px"
+                    theme="dark"
+                    extensions={[require("@codemirror/lang-python").python()]}
+                    onChange={v => updateField("instructions", v)}
+                    style={editorTheme}
+                  />
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="difficulty">Dificultad (1-5)</Label>
-                <Input id="difficulty" type="number" min="1" max="5" required value={formData.difficulty} onChange={e => setFormData({ ...formData, difficulty: parseInt(e.target.value) })} />
+                <Input id="difficulty" type="number" min="1" max="5" required value={formData.difficulty} onChange={e => updateField("difficulty", parseInt(e.target.value))} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="points">Puntos (Estrellas)</Label>
-                <Input id="points" type="number" min="10" required value={formData.points} onChange={e => setFormData({ ...formData, points: parseInt(e.target.value) })} />
+                <Input id="points" type="number" min="10" required value={formData.points} onChange={e => updateField("points", parseInt(e.target.value))} />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Tipo de Validación</Label>
-                <Select value={formData.solution_type} onValueChange={v => setFormData({ ...formData, solution_type: v })}>
+                <Select value={formData.solution_type} onValueChange={v => updateField("solution_type", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="output">Comparar Output</SelectItem>
@@ -131,35 +159,79 @@ export default function CreateChallengePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="max_attempts">Intentos máximos (0 = ilimitado)</Label>
-                <Input id="max_attempts" type="number" min="0" value={formData.max_attempts} onChange={e => setFormData({ ...formData, max_attempts: parseInt(e.target.value) })} />
+                <Input id="max_attempts" type="number" min="0" value={formData.max_attempts} onChange={e => updateField("max_attempts", parseInt(e.target.value))} />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="base_code">Código base para el estudiante</Label>
-              <Textarea id="base_code" rows={5} className="font-mono text-sm" value={formData.base_code} onChange={e => setFormData({ ...formData, base_code: e.target.value })} placeholder="# Código que verá el estudiante al iniciar el reto" />
+              <Label className="flex items-center gap-2"><Code className="w-4 h-4" /> Código base para el estudiante</Label>
+              <div className="rounded-lg overflow-hidden border border-border">
+                {typeof window !== "undefined" && (
+                  <CodeEditor
+                    value={formData.base_code}
+                    height="150px"
+                    theme="dark"
+                    extensions={[require("@codemirror/lang-python").python()]}
+                    onChange={v => updateField("base_code", v)}
+                    style={editorTheme}
+                  />
+                )}
+              </div>
             </div>
 
             {formData.solution_type === "output" ? (
               <div className="space-y-2">
-                <Label htmlFor="solution_output">Output esperado</Label>
-                <Textarea id="solution_output" rows={4} className="font-mono text-sm" value={formData.solution_output} onChange={e => setFormData({ ...formData, solution_output: e.target.value })} placeholder="Escribe el output exacto que debe producir el código correcto" />
+                <Label className="flex items-center gap-2"><Code className="w-4 h-4" /> Output esperado</Label>
+                <div className="rounded-lg overflow-hidden border border-border">
+                  {typeof window !== "undefined" && (
+                    <CodeEditor
+                      value={formData.solution_output}
+                      height="120px"
+                      theme="dark"
+                      extensions={[require("@codemirror/lang-python").python()]}
+                      onChange={v => updateField("solution_output", v)}
+                      style={editorTheme}
+                    />
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="test_code">Código de test</Label>
-                <Textarea id="test_code" rows={6} className="font-mono text-sm" value={formData.test_code} onChange={e => setFormData({ ...formData, test_code: e.target.value })} placeholder="# Código de test que validará la solución del estudiante\n# Se ejecutará después del código del estudiante" />
+                <Label className="flex items-center gap-2"><Code className="w-4 h-4" /> Código de test</Label>
+                <div className="rounded-lg overflow-hidden border border-border">
+                  {typeof window !== "undefined" && (
+                    <CodeEditor
+                      value={formData.test_code}
+                      height="180px"
+                      theme="dark"
+                      extensions={[require("@codemirror/lang-python").python()]}
+                      onChange={v => updateField("test_code", v)}
+                      style={editorTheme}
+                    />
+                  )}
+                </div>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="solution_code">Código de solución (visible después de la fecha límite)</Label>
-              <Textarea id="solution_code" rows={6} className="font-mono text-sm" value={formData.solution_code} onChange={e => setFormData({ ...formData, solution_code: e.target.value })} placeholder="# Solución completa del reto" />
+              <Label className="flex items-center gap-2"><Code className="w-4 h-4" /> Código de solución (visible después de la fecha límite)</Label>
+              <div className="rounded-lg overflow-hidden border border-border">
+                {typeof window !== "undefined" && (
+                  <CodeEditor
+                    value={formData.solution_code}
+                    height="180px"
+                    theme="dark"
+                    extensions={[require("@codemirror/lang-python").python()]}
+                    onChange={v => updateField("solution_code", v)}
+                    style={editorTheme}
+                  />
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-4">
               <Label htmlFor="is_published">Publicar inmediatamente:</Label>
-              <input type="checkbox" id="is_published" checked={formData.is_published} onChange={e => setFormData({ ...formData, is_published: e.target.checked })} className="h-4 w-4" />
+              <input type="checkbox" id="is_published" checked={formData.is_published} onChange={e => updateField("is_published", e.target.checked)} className="h-4 w-4" />
             </div>
 
             <Button type="submit" disabled={loading} className="w-full">

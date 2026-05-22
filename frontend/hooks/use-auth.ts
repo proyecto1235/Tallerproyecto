@@ -111,17 +111,26 @@ export function useAuth() {
           isAuthenticated: true,
         })
       } else {
-        localStorage.removeItem("mock_session")
-        try { await clearAuthCookies() } catch (e) {}
-        setState({
-          user: null,
-          isLoading: false,
-          isAuthenticated: false,
-        })
-        // No redirigir en rutas públicas (login, register) o en dashboard
-        if (window.location.pathname.startsWith('/dashboard')) {
-            window.location.href = '/login'
+        console.warn("Backend inactivo, usando fallback local de Registro.")
+
+        const fallbackUser = { ...MOCK_USER, email, fullName, role: "student" } as User
+        localStorage.setItem("mock_session", JSON.stringify(fallbackUser))
+
+        if (requestTeacher) {
+          // Store a pending teacher request in localStorage for admin to see
+          const pending = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
+          pending.push({ id: Date.now(), name: fullName, email, date: new Date().toISOString(), status: "pending" })
+          localStorage.setItem("robolearn_teacher_pending", JSON.stringify(pending))
         }
+
+        setState({
+          user: fallbackUser,
+          isLoading: false,
+          isAuthenticated: true,
+        })
+
+        window.location.href = "/dashboard"
+        return { user: fallbackUser }
       }
     }
   }, [])

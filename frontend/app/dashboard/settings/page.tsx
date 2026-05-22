@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Settings2, User, Bell, Shield, Palette, Loader2, CheckCircle2, Sun, Moon } from "lucide-react"
+import { Settings2, User, Bell, Shield, Palette, Loader2, CheckCircle2, Sun, Moon, Share2, Trash2, Link2, MessageCircle, Globe, ExternalLink } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const profileFormSchema = z.object({
@@ -60,6 +60,10 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false)
   const [selectedAvatar, setSelectedAvatar] = useState("")
+
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Estado para la sección de Seguridad
   const [securityForm, setSecurityForm] = useState({
@@ -216,6 +220,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="appearance" className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary py-2.5">
             <Palette className="w-4 h-4" /> Apariencia
+          </TabsTrigger>
+          <TabsTrigger value="danger" className="flex items-center gap-2 data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive py-2.5">
+            <Trash2 className="w-4 h-4" /> Peligro
           </TabsTrigger>
         </TabsList>
 
@@ -466,7 +473,126 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="danger">
+          <Card className="border-destructive/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="w-5 h-5" />
+                Zona de Peligro
+              </CardTitle>
+              <CardDescription>
+                Acciones irreversibles para tu cuenta. Ten cuidado.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/20 bg-destructive/5">
+                <div>
+                  <h4 className="font-bold">Compartir Perfil</h4>
+                  <p className="text-sm text-muted-foreground">Comparte tu perfil de RoboLearn en redes sociales.</p>
+                </div>
+                <Button variant="outline" className="border-primary/30" onClick={() => setIsShareModalOpen(true)}>
+                  <Share2 className="w-4 h-4 mr-1" /> Compartir
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/20 bg-destructive/5">
+                <div>
+                  <h4 className="font-bold text-destructive">Eliminar Cuenta</h4>
+                  <p className="text-sm text-muted-foreground">Esta acción eliminará permanentemente todos tus datos.</p>
+                </div>
+                <Button variant="destructive" onClick={() => setIsDeleteConfirmModalOpen(true)}>
+                  <Trash2 className="w-4 h-4 mr-1" /> Eliminar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Compartir Perfil Modal */}
+      <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Compartir Perfil</DialogTitle>
+            <DialogDescription>Comparte tu perfil de RoboLearn con otros.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+              <Link2 className="w-5 h-5 text-muted-foreground shrink-0" />
+              <input
+                readOnly
+                value={`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/profile/${savedProfile.username}`}
+                className="flex-1 bg-transparent text-sm font-mono outline-none"
+                onClick={e => (e.target as HTMLInputElement).select()}
+              />
+              <Button size="sm" variant="outline" onClick={() => {
+                const url = `${window.location.origin}/dashboard/profile/me`
+                navigator.clipboard.writeText(url)
+                toast.success("Enlace copiado al portapapeles")
+              }}>
+                Copiar
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
+                const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/me`)
+                window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, "_blank", "noopener")
+              }}>
+                <Globe className="w-6 h-6 text-blue-600" />
+                <span className="text-xs">Facebook</span>
+              </Button>
+              <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
+                const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/me`)
+                window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, "_blank", "noopener")
+              }}>
+                <ExternalLink className="w-6 h-6 text-blue-500" />
+                <span className="text-xs">LinkedIn</span>
+              </Button>
+              <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
+                const text = encodeURIComponent(`Mira mi perfil en RoboLearn: ${window.location.origin}/dashboard/profile/me`)
+                window.open(`https://wa.me/?text=${text}`, "_blank", "noopener")
+              }}>
+                <MessageCircle className="w-6 h-6 text-green-500" />
+                <span className="text-xs">WhatsApp</span>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmar Eliminar Cuenta */}
+      <Dialog open={isDeleteConfirmModalOpen} onOpenChange={setIsDeleteConfirmModalOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">¿Eliminar cuenta?</DialogTitle>
+            <DialogDescription>
+              Esta acción es irreversible. Todos tus datos, progreso y logros serán eliminados permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmModalOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" disabled={isDeleting} onClick={async () => {
+              setIsDeleting(true)
+              try {
+                await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/users/profile`, {
+                  method: "DELETE", credentials: "include"
+                })
+                toast.success("Cuenta eliminada. Redirigiendo...")
+                setTimeout(() => window.location.href = "/logout", 1500)
+              } catch (_) {
+                toast.error("Error al eliminar cuenta. Intenta de nuevo.")
+              } finally {
+                setIsDeleting(false)
+                setIsDeleteConfirmModalOpen(false)
+              }
+            }}>
+              {isDeleting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+              {isDeleting ? "Eliminando..." : "Sí, eliminar mi cuenta"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Selector de Avatar */}
       <Dialog open={isAvatarModalOpen} onOpenChange={setIsAvatarModalOpen}>

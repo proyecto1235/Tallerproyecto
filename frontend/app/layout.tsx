@@ -42,6 +42,8 @@ export default function RootLayout({
       <body className="font-sans antialiased min-h-screen bg-background text-foreground">
         <ThemeProvider>
           {children}
+          <div className="crt-scanlines crt-flicker" />
+          <div className="crt-vignette" />
           <ChatWidget />
           <Toaster
             position="bottom-right"

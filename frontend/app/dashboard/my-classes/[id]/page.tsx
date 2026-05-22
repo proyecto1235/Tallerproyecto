@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, ArrowLeft, Plus, BookOpen, Code, Pencil, Trash, ChevronRight, GripVertical, FileText } from "lucide-react"
+import { Loader2, ArrowLeft, Plus, BookOpen, Code, Pencil, Trash, FileText, UserCheck, UserX, Check, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
-const STORAGE_KEY = "robolearn_teacher_classes"
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 interface ClassModule {
   id: string
@@ -24,78 +25,105 @@ interface ClassModule {
   exercise_count: number
 }
 
-interface TeacherClass {
-  id: string
-  title: string
-  description: string
-  category: string
-  difficulty: string
-  is_published: boolean
-  modules: any[]
-  student_count: number
+interface EnrollmentRequest {
+  id: number
+  student_id: number
+  student_name: string
+  student_email: string
+  status: string
+  enrolled_at: string
 }
 
 export default function ClassDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const [cls, setCls] = useState<TeacherClass | null>(null)
+  const classId = parseInt(params.id as string, 10)
+
+  const [cls, setCls] = useState<any>(null)
   const [modules, setModules] = useState<ClassModule[]>([])
+  const [requests, setRequests] = useState<EnrollmentRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModule, setShowCreateModule] = useState(false)
   const [newModule, setNewModule] = useState({ title: "", description: "" })
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const all: TeacherClass[] = JSON.parse(saved)
-      const found = all.find(c => c.id === params.id)
-      if (found) {
-        setCls(found)
-        setModules((found.modules || []).map((m: any, i: number) => ({
-          ...m,
-          exercise_count: m.exercises?.length || 0,
-          order: m.order || i + 1
+    if (!classId) return
+    loadData()
+  }, [classId])
+
+  async function loadData() {
+    setLoading(true)
+    try {
+      const [classRes, reqRes] = await Promise.all([
+        fetch(`${API}/classes/${classId}`, { credentials: "include" }),
+        fetch(`${API}/classes/${classId}/requests`, { credentials: "include" })
+      ])
+      const classData = await classRes.json()
+      if (classData.success) {
+        setCls(classData.class)
+        setModules((classData.class.class_modules || []).map((m: any, i: number) => ({
+          id: m.id?.toString() || String(i),
+          title: m.title,
+          description: m.description || "",
+          theory_content: m.theory_content || "",
+          order: m.order || i + 1,
+          exercise_count: m.exercises?.length || 0
         })))
+      }
+      const reqData = await reqRes.json()
+      if (reqData.success) {
+        setRequests(reqData.enrollments || [])
+      }
+    } catch (_) {
+      // Fallback to localStorage
+      const saved = localStorage.getItem("robolearn_teacher_classes")
+      if (saved) {
+        const all = JSON.parse(saved)
+        const found = all.find((c: any) => c.id === params.id)
+        if (found) {
+          setCls(found)
+          setModules((found.modules || []).map((m: any, i: number) => ({
+            ...m,
+            exercise_count: m.exercises?.length || 0,
+            order: m.order || i + 1
+          })))
+        }
       }
     }
     setLoading(false)
-  }, [params.id])
-
-  const saveModules = (updated: ClassModule[]) => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const all: TeacherClass[] = JSON.parse(saved)
-      const idx = all.findIndex(c => c.id === params.id)
-      if (idx >= 0) {
-        all[idx].modules = updated
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
-        setModules(updated)
-      }
-    }
   }
 
-  const handleAddModule = () => {
-    if (!newModule.title.trim()) {
-      toast.error("El título es obligatorio")
-      return
+  async function handleEnrollAction(studentId: number, action: "approve" | "reject") {
+    try {
+      const res = await fetch(`${API}/classes/${classId}/${action}/${studentId}`, {
+        method: "POST",
+        credentials: "include"
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(action === "approve" ? "Matrícula aprobada" : "Matrícula rechazada")
+        // Refresh requests
+        const reqRes = await fetch(`${API}/classes/${classId}/requests`, { credentials: "include" })
+        const reqData = await reqRes.json()
+        if (reqData.success) setRequests(reqData.enrollments || [])
+      } else {
+        toast.error(data.error || "Error al procesar solicitud")
+      }
+    } catch (_) {
+      toast.error("Error de conexión")
     }
-    const mod: ClassModule = {
-      id: Math.random().toString(36).substring(2, 10),
-      title: newModule.title,
-      description: newModule.description,
-      theory_content: `# ${newModule.title}\n\nEscribe aquí el contenido teórico...`,
-      order: modules.length + 1,
-      exercise_count: 0
-    }
-    saveModules([...modules, mod])
-    setNewModule({ title: "", description: "" })
-    setShowCreateModule(false)
-    toast.success("Módulo creado")
   }
 
   const handleDeleteModule = (id: string) => {
-    if (!confirm("¿Eliminar este módulo?")) return
-    saveModules(modules.filter(m => m.id !== id).map((m, i) => ({ ...m, order: i + 1 })))
+    setConfirmDelete(id)
+  }
+
+  const confirmDeleteModule = () => {
+    if (!confirmDelete) return
+    const updated = modules.filter(m => m.id !== confirmDelete).map((m, i) => ({ ...m, order: i + 1 }))
+    setModules(updated)
+    setConfirmDelete(null)
     toast.success("Módulo eliminado")
   }
 
@@ -112,6 +140,8 @@ export default function ClassDetailPage() {
     )
   }
 
+  const pendingRequests = requests.filter(r => r.status === "pending")
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-10">
       <Button variant="ghost" onClick={() => router.push('/dashboard/my-classes')}>
@@ -125,7 +155,7 @@ export default function ClassDetailPage() {
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{cls.title}</h1>
-            <p className="text-muted-foreground">{cls.category} · {cls.difficulty} · {cls.student_count} estudiantes</p>
+            <p className="text-muted-foreground">{cls.category} · {cls.difficulty}</p>
           </div>
         </div>
       </div>
@@ -133,6 +163,36 @@ export default function ClassDetailPage() {
       {cls.description && (
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">{cls.description}</CardContent>
+        </Card>
+      )}
+
+      {/* Enrollment Requests */}
+      {pendingRequests.length > 0 && (
+        <Card className="border-amber-500/20 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-500">
+              <UserCheck className="w-5 h-5" />
+              Solicitudes de Matrícula ({pendingRequests.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingRequests.map((req) => (
+              <div key={req.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-500/20 bg-card">
+                <div>
+                  <p className="font-medium">{req.student_name}</p>
+                  <p className="text-sm text-muted-foreground">{req.student_email}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleEnrollAction(req.student_id, "approve")}>
+                    <Check className="w-4 h-4 mr-1" /> Aprobar
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => handleEnrollAction(req.student_id, "reject")}>
+                    <X className="w-4 h-4 mr-1" /> Rechazar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
         </Card>
       )}
 
@@ -196,10 +256,34 @@ export default function ClassDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateModule(false)}>Cancelar</Button>
-            <Button onClick={handleAddModule}>Crear Módulo</Button>
+            <Button onClick={() => {
+              if (!newModule.title.trim()) { toast.error("El título es obligatorio"); return }
+              const mod: ClassModule = {
+                id: Math.random().toString(36).substring(2, 10),
+                title: newModule.title,
+                description: newModule.description,
+                theory_content: `# ${newModule.title}\n\nEscribe aquí el contenido teórico...`,
+                order: modules.length + 1,
+                exercise_count: 0
+              }
+              setModules([...modules, mod])
+              setNewModule({ title: "", description: "" })
+              setShowCreateModule(false)
+              toast.success("Módulo creado")
+            }}>Crear Módulo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(o) => { if (!o) setConfirmDelete(null) }}
+        title="Eliminar módulo"
+        description="¿Estás seguro de eliminar este módulo? Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
+        onConfirm={confirmDeleteModule}
+        variant="destructive"
+      />
     </div>
   )
 }

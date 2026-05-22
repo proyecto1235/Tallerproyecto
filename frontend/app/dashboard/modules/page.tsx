@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react"
 import { ModuleCard } from "@/components/dashboard/module-card"
-import { Map, BookOpen, Trophy, Loader2, Code, ChevronRight } from "lucide-react"
+import { Map, BookOpen, Trophy, Loader2, Code, ChevronRight, Settings } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/hooks/use-auth"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -29,6 +30,7 @@ const difficultyColors: Record<string, string> = {
 
 export default function ModulesPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [modules, setModules] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -177,14 +179,7 @@ export default function ModulesPage() {
                 </div>
 
                 <div className="flex-1 w-full lg:w-1/2">
-                  <div
-                    onClick={() => mod.status !== 'locked' && router.push(`/dashboard/modules/${mod.id}`)}
-                    className={`bg-card border rounded-xl p-5 transition-all duration-300 ${
-                      mod.status === 'locked'
-                        ? 'opacity-60 cursor-not-allowed'
-                        : 'hover:shadow-lg hover:-translate-y-1 cursor-pointer'
-                    }`}
-                  >
+                  <div className="bg-card border rounded-xl p-5 transition-all duration-300 hover:shadow-lg">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
@@ -222,12 +217,29 @@ export default function ModulesPage() {
                       </div>
                     )}
 
-                    {mod.status !== 'locked' && (
-                      <Button size="sm" className="w-full mt-3 group" variant={mod.status === 'completed' ? 'outline' : 'default'}>
-                        {mod.status === 'completed' ? 'Repasar' : 'Continuar'}
-                        <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                      </Button>
-                    )}
+                    <div className="flex gap-2 mt-3">
+                      {mod.status !== 'locked' && (
+                        <Button
+                          size="sm"
+                          className="flex-1 group"
+                          variant={mod.status === 'completed' ? 'outline' : 'default'}
+                          onClick={() => router.push(`/dashboard/modules/${mod.id}`)}
+                        >
+                          {mod.status === 'completed' ? 'Repasar' : 'Continuar'}
+                          <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                        </Button>
+                      )}
+                      {user?.role === "admin" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-primary/30"
+                          onClick={() => router.push(`/dashboard/content-review?edit=${mod.id}`)}
+                        >
+                          <Settings className="w-4 h-4 mr-1" /> Editar
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
