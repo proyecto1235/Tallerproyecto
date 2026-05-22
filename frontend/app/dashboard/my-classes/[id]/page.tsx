@@ -62,7 +62,7 @@ export default function ClassDetailPage() {
       const classData = await classRes.json()
       if (classData.success) {
         setCls(classData.class)
-        setModules((classData.class.class_modules || []).map((m: any, i: number) => ({
+        setModules((classData.class.modules || []).map((m: any, i: number) => ({
           id: m.id?.toString() || String(i),
           title: m.title,
           description: m.description || "",
@@ -119,12 +119,24 @@ export default function ClassDetailPage() {
     setConfirmDelete(id)
   }
 
-  const confirmDeleteModule = () => {
+  const confirmDeleteModule = async () => {
     if (!confirmDelete) return
-    const updated = modules.filter(m => m.id !== confirmDelete).map((m, i) => ({ ...m, order: i + 1 }))
-    setModules(updated)
+    try {
+      const res = await fetch(`${API}/classes/${classId}/modules/${confirmDelete}`, {
+        method: "DELETE", credentials: "include"
+      })
+      const data = await res.json()
+      if (data.success) {
+        const updated = modules.filter(m => m.id !== confirmDelete).map((m, i) => ({ ...m, order: i + 1 }))
+        setModules(updated)
+        toast.success("Módulo eliminado")
+      } else {
+        toast.error(data.error || "Error al eliminar módulo")
+      }
+    } catch (_) {
+      toast.error("Error de conexión")
+    }
     setConfirmDelete(null)
-    toast.success("Módulo eliminado")
   }
 
   if (loading) {
@@ -256,20 +268,40 @@ export default function ClassDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateModule(false)}>Cancelar</Button>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!newModule.title.trim()) { toast.error("El título es obligatorio"); return }
-              const mod: ClassModule = {
-                id: Math.random().toString(36).substring(2, 10),
-                title: newModule.title,
-                description: newModule.description,
-                theory_content: `# ${newModule.title}\n\nEscribe aquí el contenido teórico...`,
-                order: modules.length + 1,
-                exercise_count: 0
+              try {
+                const res = await fetch(`${API}/classes/${classId}/modules`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({
+                    title: newModule.title,
+                    description: newModule.description,
+                    theory_content: `# ${newModule.title}\n\nEscribe aquí el contenido teórico...`,
+                    order: modules.length + 1
+                  })
+                })
+                const data = await res.json()
+                if (data.success) {
+                  const mod: ClassModule = {
+                    id: String(data.module_id),
+                    title: newModule.title,
+                    description: newModule.description,
+                    theory_content: `# ${newModule.title}\n\nEscribe aquí el contenido teórico...`,
+                    order: modules.length + 1,
+                    exercise_count: 0
+                  }
+                  setModules([...modules, mod])
+                  toast.success("Módulo creado")
+                } else {
+                  toast.error(data.error || "Error al crear módulo")
+                }
+              } catch (_) {
+                toast.error("Error de conexión")
               }
-              setModules([...modules, mod])
               setNewModule({ title: "", description: "" })
               setShowCreateModule(false)
-              toast.success("Módulo creado")
             }}>Crear Módulo</Button>
           </DialogFooter>
         </DialogContent>

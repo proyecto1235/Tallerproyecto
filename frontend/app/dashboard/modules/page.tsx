@@ -234,7 +234,10 @@ export default function ModulesPage() {
                           size="sm"
                           variant="outline"
                           className="border-primary/30"
-                          onClick={() => router.push(`/dashboard/content-review?edit=${mod.id}`)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/dashboard/modules/${mod.id}/edit`)
+                          }}
                         >
                           <Settings className="w-4 h-4 mr-1" /> Editar
                         </Button>

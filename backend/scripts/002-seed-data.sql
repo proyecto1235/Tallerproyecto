@@ -437,6 +437,42 @@ FROM modules m WHERE m.title = 'Inteligencia Artificial Básica'
 ON CONFLICT DO NOTHING;
 
 -- ============================================
+-- Teacher Classes (for enrollment)
+-- ============================================
+INSERT INTO classes (title, description, category, difficulty, teacher_id, is_published)
+SELECT 'Introducción a la IA', 'Aprende los conceptos fundamentales de Inteligencia Artificial con Python.', 'Inteligencia Artificial', 'Principiante', id, TRUE
+FROM users WHERE email = 'teacher@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO classes (title, description, category, difficulty, teacher_id, is_published)
+SELECT 'Desarrollo Web con Flask', 'Crea aplicaciones web modernas con Flask y Python.', 'Desarrollo Web', 'Intermedio', id, TRUE
+FROM users WHERE email = 'teacher@robolearn.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO class_modules (class_id, title, description, theory_content, "order")
+SELECT c.id, '¿Qué es la IA?', 'Introducción a la Inteligencia Artificial', '# ¿Qué es la IA?\n\nConceptos básicos de inteligencia artificial.', 1
+FROM classes c WHERE c.title = 'Introducción a la IA'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO class_modules (class_id, title, description, theory_content, "order")
+SELECT c.id, 'Machine Learning básico', 'Primeros pasos con ML', '# Machine Learning\n\nAprende los fundamentos del ML.', 2
+FROM classes c WHERE c.title = 'Introducción a la IA'
+ON CONFLICT DO NOTHING;
+
+-- Class enrollments
+INSERT INTO class_enrollments (student_id, class_id, status, enrolled_at)
+SELECT u.id, c.id, 'approved', CURRENT_TIMESTAMP - INTERVAL '5 days'
+FROM users u, classes c
+WHERE u.email = 'student1@robolearn.com' AND c.title = 'Introducción a la IA'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO class_enrollments (student_id, class_id, status, enrolled_at)
+SELECT u.id, c.id, 'pending', CURRENT_TIMESTAMP
+FROM users u, classes c
+WHERE u.email = 'student2@robolearn.com' AND c.title = 'Desarrollo Web con Flask'
+ON CONFLICT DO NOTHING;
+
+-- ============================================
 -- Seed Achievement Definitions
 -- ============================================
 INSERT INTO achievements (name, description, icon, points, criteria) VALUES

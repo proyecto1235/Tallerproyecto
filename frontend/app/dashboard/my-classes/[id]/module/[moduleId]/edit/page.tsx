@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, ArrowLeft, Save, Plus, Trash, Code, Eye, Edit3, GripVertical, Play, Hash } from "lucide-react"
+import { Loader2, ArrowLeft, Save, Plus, Trash, Code, Eye, Edit3, Hash } from "lucide-react"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -25,20 +25,24 @@ import {
 import { InlineExercise } from "@/components/interactive/InlineExercise"
 import { TheoryWithExercises } from "@/components/interactive/theory-with-exercises"
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 const STORAGE_KEY = "robolearn_teacher_classes"
 
 interface ClassExercise {
-  id: string
+  id: number | string
   title: string
   description: string
   instructions: string
-  exercise_type: "coding"
+  exercise_type: string
   difficulty: number
   points: number
+  solution_output: string | null
+  solution_type: string
+  test_code: string | null
 }
 
 interface ClassModuleData {
-  id: string
+  id: number | string
   title: string
   description: string
   theory_content: string
@@ -64,12 +68,31 @@ export default function ModuleEditPage() {
   const editorViewRef = useRef<any>(null)
 
   useEffect(() => {
+    loadModule()
+  }, [classId, moduleId])
+
+  async function loadModule() {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API}/classes/${classId}/modules/${moduleId}`, { credentials: "include" })
+      const data = await res.json()
+      if (data.success && data.module) {
+        const m = data.module
+        setMod(m)
+        setTitle(m.title)
+        setDescription(m.description || "")
+        setContent(m.theory_content || `# ${m.title}\n\nEscribe aquí el contenido...`)
+        setExercises(m.exercises || [])
+        setLoading(false)
+        return
+      }
+    } catch (_) {}
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const all = JSON.parse(saved)
-      const cls = all.find((c: any) => c.id === classId)
+      const cls = all.find((c: any) => String(c.id) === classId)
       if (cls) {
-        const found = (cls.modules || []).find((m: any) => m.id === moduleId)
+        const found = (cls.modules || []).find((m: any) => String(m.id) === moduleId)
         if (found) {
           setMod(found)
           setTitle(found.title)
@@ -80,28 +103,25 @@ export default function ModuleEditPage() {
       }
     }
     setLoading(false)
-  }, [classId, moduleId])
+  }
 
-  const saveModule = () => {
+  async function saveModule() {
     setSaving(true)
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const all = JSON.parse(saved)
-      const clsIdx = all.findIndex((c: any) => c.id === classId)
-      if (clsIdx >= 0) {
-        const modIdx = all[clsIdx].modules.findIndex((m: any) => m.id === moduleId)
-        if (modIdx >= 0) {
-          all[clsIdx].modules[modIdx] = {
-            ...all[clsIdx].modules[modIdx],
-            title,
-            description,
-            theory_content: content,
-            exercises
-          }
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
-          toast.success("Módulo guardado")
-        }
+    try {
+      const res = await fetch(`${API}/classes/${classId}/modules/${moduleId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title, description, theory_content: content })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Módulo guardado")
+      } else {
+        toast.error(data.error || "Error al guardar")
       }
+    } catch (_) {
+      toast.error("Error de conexión")
     }
     setSaving(false)
   }
@@ -116,42 +136,83 @@ export default function ModuleEditPage() {
     } else {
       setContent(prev => prev + tag)
     }
-    toast.success("Tag [ejercicio] insertado — el ejercicio #" + (exercises.length + 1) + " aparecerá aquí")
+    toast.success("Tag [ejercicio] insertado")
   }
 
   const addExercise = () => {
-    const newEx: ClassExercise = {
-      id: Math.random().toString(36).substring(2, 10),
+    setEditingExercise({
+      id: 0,
       title: "",
       description: "",
       instructions: "# Escribe tu código aquí\n\n",
       exercise_type: "coding",
       difficulty: 1,
-      points: 10
-    }
-    setEditingExercise(newEx)
+      points: 10,
+      solution_output: null,
+      solution_type: "output",
+      test_code: null
+    })
     setShowAddExercise(true)
   }
 
-  const saveExercise = () => {
+  async function saveExercise() {
     if (!editingExercise?.title.trim()) {
       toast.error("El título del ejercicio es obligatorio")
       return
     }
-    if (editingExercise.id && exercises.find(e => e.id === editingExercise.id)) {
-      setExercises(exercises.map(e => e.id === editingExercise.id ? editingExercise : e))
-    } else {
-      setExercises([...exercises, { ...editingExercise, id: Math.random().toString(36).substring(2, 10) }])
+    const isNew = !editingExercise.id || (typeof editingExercise.id === "string" && !Number.isInteger(Number(editingExercise.id)))
+    const url = isNew
+      ? `${API}/classes/${classId}/modules/${moduleId}/exercises`
+      : `${API}/classes/${classId}/modules/${moduleId}/exercises/${editingExercise.id}`
+    try {
+      const res = await fetch(url, {
+        method: isNew ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          title: editingExercise.title,
+          description: editingExercise.description,
+          instructions: editingExercise.instructions,
+          exercise_type: editingExercise.exercise_type,
+          difficulty: editingExercise.difficulty,
+          points: editingExercise.points,
+          solution_output: editingExercise.solution_output,
+          solution_type: editingExercise.solution_type,
+          test_code: editingExercise.test_code
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(isNew ? "Ejercicio creado" : "Ejercicio actualizado")
+        setShowAddExercise(false)
+        setEditingExercise(null)
+        const modRes = await fetch(`${API}/classes/${classId}/modules/${moduleId}`, { credentials: "include" })
+        const modData = await modRes.json()
+        if (modData.success) setExercises(modData.module.exercises || [])
+      } else {
+        toast.error(data.error || "Error al guardar ejercicio")
+      }
+    } catch (_) {
+      toast.error("Error de conexión")
     }
-    setShowAddExercise(false)
-    setEditingExercise(null)
-    toast.success("Ejercicio guardado")
   }
 
-  const deleteExercise = (id: string) => {
+  async function deleteExercise(id: number | string) {
     if (!confirm("¿Eliminar este ejercicio?")) return
-    setExercises(exercises.filter(e => e.id !== id))
-    toast.success("Ejercicio eliminado")
+    try {
+      const res = await fetch(`${API}/classes/${classId}/modules/${moduleId}/exercises/${id}`, {
+        method: "DELETE", credentials: "include"
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Ejercicio eliminado")
+        setExercises(exercises.filter(e => e.id !== id))
+      } else {
+        toast.error(data.error || "Error al eliminar")
+      }
+    } catch (_) {
+      toast.error("Error de conexión")
+    }
   }
 
   if (loading) {
@@ -284,7 +345,7 @@ export default function ModuleEditPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Play className="w-5 h-5 text-green-500" />
+                  <Code className="w-5 h-5 text-green-500" />
                   Vista Previa del Ejercicio
                 </CardTitle>
               </CardHeader>
@@ -297,11 +358,11 @@ export default function ModuleEditPage() {
       </div>
 
       <Dialog open={showAddExercise} onOpenChange={(o) => { setShowAddExercise(o); if (!o) setEditingExercise(null) }}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>{editingExercise?.id && exercises.find(e => e.id === editingExercise.id) ? "Editar Ejercicio" : "Nuevo Ejercicio"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-1 max-h-[calc(85vh-120px)]">
             <div className="space-y-2">
               <Label>Título del ejercicio</Label>
               <Input value={editingExercise?.title || ""} onChange={e => setEditingExercise(p => ({ ...p!, title: e.target.value }))} placeholder="Ej: Variables en acción" />
@@ -315,7 +376,7 @@ export default function ModuleEditPage() {
               <div className="border rounded-md overflow-hidden">
                 <CodeMirror
                   value={editingExercise?.instructions || ""}
-                  height="200px"
+                  height="180px"
                   theme={oneDark}
                   extensions={[python()]}
                   onChange={v => setEditingExercise(p => ({ ...p!, instructions: v }))}

@@ -33,40 +33,34 @@ export default function ClassDetailsPage() {
   async function loadData() {
     setIsLoading(true)
     try {
-      const [classRes, enrolledRes] = await Promise.all([
-        fetch(`${API}/classes/${classId}`, { credentials: "include" }),
-        fetch(`${API}/classes/enrolled`, { credentials: "include" })
-      ])
-      const classData = await classRes.json()
-      if (classData.success) {
-        setClassData(classData.class)
-        setModules((classData.class.class_modules || []).map((m: any, i: number) => ({
+      const res = await fetch(`${API}/classes/${classId}`, { credentials: "include" })
+      const data = await res.json()
+      if (data.success) {
+        const c = data.class
+        setClassData(c)
+        setModules((c.modules || []).map((m: any, i: number) => ({
           ...m,
-          exercise_count: m.exercises?.length || 0,
+          exercise_count: m.exercise_count || m.exercises?.length || 0,
           order: m.order || i + 1
         })))
+        const status = c.enrollment_status
+        if (status === "approved") {
+          setEnrollmentStatus("approved")
+          setErrorMsg(null)
+        } else if (status === "pending") {
+          setEnrollmentStatus("pending")
+          setErrorMsg("Tu solicitud de matrícula está pendiente de aprobación.")
+        } else if (status === "rejected") {
+          setEnrollmentStatus("rejected")
+          setErrorMsg("Tu solicitud de matrícula fue rechazada.")
+        } else {
+          setEnrollmentStatus(null)
+          setErrorMsg("No estás matriculado en esta clase.")
+        }
       } else {
         setErrorMsg("Clase no encontrada")
       }
-
-      const enrolledData = await enrolledRes.json()
-      if (enrolledData.success) {
-        const enrollment = enrolledData.classes?.find((c: any) => c.id === classId)
-        if (enrollment) {
-          setEnrollmentStatus(enrollment.enrollment_status)
-          if (enrollment.enrollment_status === "approved") {
-            setErrorMsg(null)
-          } else if (enrollment.enrollment_status === "pending") {
-            setErrorMsg("Tu solicitud de matrícula está pendiente de aprobación.")
-          } else if (enrollment.enrollment_status === "rejected") {
-            setErrorMsg("Tu solicitud de matrícula fue rechazada.")
-          }
-        } else {
-          setErrorMsg("No estás matriculado en esta clase.")
-        }
-      }
     } catch (_) {
-      // Fallback to localStorage
       const saved = localStorage.getItem("robolearn_teacher_classes")
       if (saved) {
         const all = JSON.parse(saved)

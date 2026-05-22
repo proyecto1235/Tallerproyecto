@@ -128,6 +128,24 @@ export default function ModuleViewPage() {
     }, 100)
   }
 
+  async function completeLesson(lessonId: number) {
+    try {
+      await fetch(`${API_URL}/lessons/${lessonId}/complete`, {
+        method: "POST",
+        credentials: "include"
+      })
+      refreshLessonData()
+    } catch (_) {}
+  }
+
+  async function handleNextLesson(lesson: any, nextLessonId: number) {
+    if (lesson.total_exercises === 0 && !completedLessonIds.has(lesson.id)) {
+      await completeLesson(lesson.id)
+    }
+    setUnlockedLessons(prev => new Set([...prev, nextLessonId]))
+    scrollToLesson(nextLessonId)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -248,9 +266,7 @@ export default function ModuleViewPage() {
                       onClick={(e) => {
                         e.stopPropagation()
                         if (index + 1 < lessons.length) {
-                          const nextId = lessons[index + 1].id
-                          setUnlockedLessons(prev => new Set([...prev, nextId]))
-                          scrollToLesson(nextId)
+                          handleNextLesson(lesson, lessons[index + 1].id)
                         }
                       }}
                     >
@@ -278,11 +294,7 @@ export default function ModuleViewPage() {
                       <Button
                         variant="default"
                         className="bg-primary hover:bg-primary/90"
-                        onClick={() => {
-                          const nextId = lessons[index + 1].id
-                          setUnlockedLessons(prev => new Set([...prev, nextId]))
-                          scrollToLesson(nextId)
-                        }}
+                        onClick={() => handleNextLesson(lesson, lessons[index + 1].id)}
                       >
                         Continuar a siguiente lección <ChevronRight className="w-4 h-4 ml-2" />
                       </Button>

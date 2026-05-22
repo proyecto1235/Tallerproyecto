@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Loader2, Copy, Check, Trophy, BookOpen, Star, Flame, Link as LinkIcon } from "lucide-react"
 import { toast } from "sonner"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 interface ProfileData {
   full_name: string
@@ -24,23 +26,62 @@ interface ProfileData {
 
 export default function ProfilePage() {
   const params = useParams()
+  const router = useRouter()
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     const fetchProfile = async () => {
+      setLoading(true)
+      let userId = (params.id as string).trim()
+
+      // Check if it's a numeric ID
+      const numericId = parseInt(userId, 10)
+      if (!isNaN(numericId)) {
+        try {
+          const res = await fetch(`${API_URL}/users/${numericId}`, { credentials: "include" })
+          const data = await res.json()
+          if (data.success) {
+            const u = data.user
+            // Fetch achievements and classes separately
+            let achievements: any[] = []
+            try {
+              const achRes = await fetch(`${API_URL}/achievements?user_id=${numericId}`, { credentials: "include" })
+              const achData = await achRes.json()
+              if (achData.success) achievements = achData.achievements || []
+            } catch (_) {}
+            setProfile({
+              full_name: u.full_name,
+              email: u.email,
+              bio: u.bio || "",
+              avatar_url: u.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.full_name}`,
+              role: u.role,
+              points: u.points || 0,
+              streak_days: u.streak_days || 0,
+              achievements,
+              classes: []
+            })
+            setLoading(false)
+            return
+          }
+        } catch (_) {}
+      }
+
+      // Try searching by name
       try {
-        const res = await fetch(`http://localhost:8000/api/users/${params.id}/profile`, { credentials: "include" })
+        const res = await fetch(`${API_URL}/users/search?q=${encodeURIComponent(userId)}`, { credentials: "include" })
         const data = await res.json()
-        if (data.success) {
-          setProfile(data.profile)
+        if (data.success && data.users.length > 0) {
+          const found = data.users[0]
+          router.replace(`/dashboard/profile/${found.id}`)
+          return
         }
       } catch (_) {}
       setLoading(false)
     }
     fetchProfile()
-  }, [params.id])
+  }, [params.id, router])
 
   const copyProfileLink = () => {
     navigator.clipboard.writeText(window.location.href)

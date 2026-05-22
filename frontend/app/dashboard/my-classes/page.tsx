@@ -87,7 +87,19 @@ export default function MyClassesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editingClass, setEditingClass] = useState<Partial<TeacherClass> | null>(null)
 
-  useEffect(() => {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+
+  const loadClasses = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/classes/my-classes`, { credentials: 'include' })
+      const data = await res.json()
+      if (data.success && data.classes) {
+        setClasses(data.classes.map((c: any) => ({ ...c, modules: [], id: String(c.id) })))
+        setLoading(false)
+        return
+      }
+    } catch (_) {}
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       setClasses(JSON.parse(saved))
@@ -95,12 +107,9 @@ export default function MyClassesPage() {
       setClasses(DEMO_CLASSES)
     }
     setLoading(false)
-  }, [])
-
-  const saveClasses = (updated: TeacherClass[]) => {
-    setClasses(updated)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
   }
+
+  useEffect(() => { loadClasses() }, [])
 
   const handleCreate = () => {
     setEditingClass({
@@ -109,43 +118,98 @@ export default function MyClassesPage() {
     setShowCreate(true)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editingClass?.title?.trim()) {
       toast.error("El título es obligatorio")
       return
     }
-    const now = new Date().toISOString()
-    if (editingClass.id) {
-      const updated = classes.map(c => c.id === editingClass.id ? { ...c, ...editingClass } as TeacherClass : c)
-      saveClasses(updated)
-      toast.success("Clase actualizada")
-    } else {
-      const newClass: TeacherClass = {
-        id: generateId(),
-        title: editingClass.title,
-        description: editingClass.description || "",
-        category: editingClass.category || "General",
-        difficulty: editingClass.difficulty || "Principiante",
-        is_published: editingClass.is_published || false,
-        modules: [],
-        student_count: 0,
-        created_at: now
+    setLoading(true)
+    try {
+      if (editingClass.id) {
+        const res = await fetch(`${API_URL}/classes/${editingClass.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            title: editingClass.title,
+            description: editingClass.description || "",
+            category: editingClass.category || "General",
+            difficulty: editingClass.difficulty || "Principiante",
+            is_published: editingClass.is_published || false
+          })
+        })
+        const data = await res.json()
+        if (data.success) {
+          toast.success("Clase actualizada")
+          loadClasses()
+        } else {
+          toast.error(data.error || "Error al actualizar")
+        }
+      } else {
+        const res = await fetch(`${API_URL}/classes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            title: editingClass.title,
+            description: editingClass.description || "",
+            category: editingClass.category || "General",
+            difficulty: editingClass.difficulty || "Principiante",
+            is_published: editingClass.is_published || false
+          })
+        })
+        const data = await res.json()
+        if (data.success) {
+          toast.success("Clase creada")
+          loadClasses()
+        } else {
+          toast.error(data.error || "Error al crear")
+        }
       }
-      saveClasses([newClass, ...classes])
-      toast.success("Clase creada")
+    } catch (_) {
+      toast.error("Error de conexión")
     }
+    setLoading(false)
     setShowCreate(false)
     setEditingClass(null)
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar esta clase?")) return
-    saveClasses(classes.filter(c => c.id !== id))
-    toast.success("Clase eliminada")
+    try {
+      const res = await fetch(`${API_URL}/classes/${id}`, {
+        method: "DELETE", credentials: "include"
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success("Clase eliminada")
+        loadClasses()
+      } else {
+        toast.error(data.error || "Error al eliminar")
+      }
+    } catch (_) {
+      toast.error("Error de conexión")
+    }
   }
 
-  const togglePublish = (id: string) => {
-    saveClasses(classes.map(c => c.id === id ? { ...c, is_published: !c.is_published } : c))
+  const togglePublish = async (id: string) => {
+    const cls = classes.find(c => c.id === id)
+    if (!cls) return
+    try {
+      const res = await fetch(`${API_URL}/classes/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ is_published: !cls.is_published })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(cls.is_published ? "Clase despublicada" : "Clase publicada")
+        loadClasses()
+      }
+    } catch (_) {
+      toast.error("Error de conexión")
+    }
   }
 
   if (loading) {

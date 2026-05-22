@@ -76,6 +76,8 @@ class ModuleUpdate(BaseModel):
     description: Optional[str] = None
     order: Optional[int] = None
     is_published: Optional[bool] = None
+    difficulty: Optional[str] = None
+    theory_content: Optional[str] = None
 
 class ExecuteRequest(BaseModel):
     code: str
@@ -122,6 +124,9 @@ class ClassExerciseCreate(BaseModel):
     difficulty: int = 1
     points: int = 10
     order: int = 0
+    solution_output: Optional[str] = None
+    solution_type: Optional[str] = "output"
+    test_code: Optional[str] = None
     metadata: Optional[dict] = None
 
 class ClassExerciseUpdate(BaseModel):
@@ -132,6 +137,9 @@ class ClassExerciseUpdate(BaseModel):
     difficulty: Optional[int] = None
     points: Optional[int] = None
     order: Optional[int] = None
+    solution_output: Optional[str] = None
+    solution_type: Optional[str] = None
+    test_code: Optional[str] = None
     metadata: Optional[dict] = None
 
 class UserRoleUpdate(BaseModel):
@@ -309,6 +317,25 @@ async def verify_admin(token_data: TokenData = Depends(verify_token)) -> TokenDa
             detail="Requires admin privileges"
         )
     return token_data
+
+async def verify_token_optional(request: Request) -> Optional[TokenData]:
+    """Verify JWT token from cookies — returns None if not authenticated"""
+    token = request.cookies.get("auth-token")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id: int = payload.get("user_id")
+        email: str = payload.get("email")
+        role: str = payload.get("role")
+        if user_id is None:
+            return None
+        return TokenData(
+            user_id=user_id, email=email, role=role,
+            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
+        )
+    except JWTError:
+        return None
 
 # ============================================
 # Initialize Repositories
@@ -508,6 +535,30 @@ async def get_user(user_id: int):
     user_data = user.to_dict()
     user_data.pop("password_hash", None)
     return {"success": True, "user": user_data}
+
+@app.get("/api/users/search", tags=["Users"])
+async def search_users(q: str = ""):
+    """Search users by name"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    if not q:
+        return {"success": True, "users": []}
+    query = """
+        SELECT id, email, full_name, role, avatar_url, bio, points, streak_days
+        FROM users
+        WHERE LOWER(full_name) LIKE LOWER(%s)
+        ORDER BY full_name ASC
+        LIMIT 20
+    """
+    users = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (f"%{q}%",))
+        for row in cursor.fetchall():
+            users.append({
+                "id": row[0], "email": row[1], "full_name": row[2],
+                "role": row[3], "avatar_url": row[4], "bio": row[5],
+                "points": row[6], "streak_days": row[7]
+            })
+    return {"success": True, "users": users}
 
 # ============================================
 # Routes - Recommendations (AI/ML)
@@ -1207,7 +1258,7 @@ async def submit_exercise(
         
         # Grade based on solution_type
         if exercise["solution_type"] == "output" and exercise["solution_output"]:
-            expected = exercise["solution_output"].strip()
+            expected = exercise["solution_output"].replace("\\n", "\n").strip()
             actual = output.strip()
             passed = (expected == actual)
             score = 100.0 if passed else 0.0
@@ -1288,7 +1339,7 @@ async def submit_exercise(
     can_view_solution = attempt_count >= 3 and not passed
     solution = None
     if can_view_solution or passed:
-        solution = exercise.get("solution_output")
+        solution = exercise.get("solution_output", "").replace("\\n", "\n")
     
     return {
         "success": True,
@@ -1547,6 +1598,152 @@ async def get_module_lessons(module_id: int, token_data: TokenData = Depends(ver
         "completed_lessons": completed_lessons,
         "all_completed": total_lessons > 0 and completed_lessons >= total_lessons
     }
+
+@app.post("/api/lessons/{lesson_id}/complete", tags=["Lessons"])
+async def complete_lesson(lesson_id: int, token_data: TokenData = Depends(verify_token)):
+    """Mark a lesson as completed (for lessons without exercises)"""
+    student_id = token_data.user_id
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT module_id FROM lessons WHERE id = %s", (lesson_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        module_id = row[0]
+
+        cursor.execute("""
+            INSERT INTO lesson_completions (student_id, lesson_id, module_id)
+            VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
+        """, (student_id, lesson_id, module_id))
+
+    return {"success": True, "message": "Lesson completed"}
+
+# --- Module Lesson CRUD (for admin / teacher module editor) ---
+
+@app.post("/api/modules/{module_id}/lessons", tags=["Modules"])
+async def create_module_lesson(module_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
+    """Create a lesson in a module (teacher must own the module)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    body = await request.json()
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        if row[0] != token_data.user_id and token_data.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your module")
+        cursor.execute("""
+            INSERT INTO lessons (module_id, title, theory_content, "order")
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (module_id, body.get("title", "Nueva Lección"), body.get("theory_content", ""), body.get("order", 0)))
+        lesson_id = cursor.fetchone()[0]
+        cursor.execute("UPDATE modules SET lesson_count = (SELECT COUNT(*) FROM lessons WHERE module_id = %s) WHERE id = %s", (module_id, module_id))
+    return {"success": True, "lesson_id": lesson_id}
+
+@app.put("/api/modules/{module_id}/lessons/{lesson_id}", tags=["Modules"])
+async def update_module_lesson(module_id: int, lesson_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
+    """Update a lesson (teacher must own the module)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    body = await request.json()
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        if row[0] != token_data.user_id and token_data.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your module")
+        fields = []; values = []
+        if "title" in body:
+            fields.append("title = %s"); values.append(body["title"])
+        if "theory_content" in body:
+            fields.append("theory_content = %s"); values.append(body["theory_content"])
+        if "order" in body:
+            fields.append('"order" = %s'); values.append(body["order"])
+        if fields:
+            values.extend([lesson_id, module_id])
+            query = f"UPDATE lessons SET {', '.join(fields)} WHERE id = %s AND module_id = %s"
+            cursor.execute(query, tuple(values))
+    return {"success": True, "message": "Lesson updated"}
+
+@app.delete("/api/modules/{module_id}/lessons/{lesson_id}", tags=["Modules"])
+async def delete_module_lesson(module_id: int, lesson_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Delete a lesson (teacher must own the module)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        if row[0] != token_data.user_id and token_data.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your module")
+        cursor.execute("DELETE FROM lessons WHERE id = %s AND module_id = %s", (lesson_id, module_id))
+        cursor.execute("UPDATE modules SET lesson_count = (SELECT COUNT(*) FROM lessons WHERE module_id = %s) WHERE id = %s", (module_id, module_id))
+    return {"success": True, "message": "Lesson deleted"}
+
+@app.post("/api/modules/{module_id}/exercises", tags=["Modules"])
+async def create_module_exercise(module_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
+    """Create an exercise in a module (teacher must own the module)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    body = await request.json()
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        if row[0] != token_data.user_id and token_data.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your module")
+        cursor.execute("""
+            INSERT INTO exercises (module_id, lesson_id, title, description, instructions, difficulty, points,
+                solution_output, solution_type, test_code, "order")
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (module_id, body.get("lesson_id"), body.get("title", "Nuevo Ejercicio"),
+              body.get("description", ""), body.get("instructions", ""),
+              body.get("difficulty", 1), body.get("points", 10),
+              body.get("solution_output"), body.get("solution_type", "output"),
+              body.get("test_code"), body.get("order", 0)))
+        exercise_id = cursor.fetchone()[0]
+    return {"success": True, "exercise_id": exercise_id}
+
+@app.put("/api/modules/{module_id}/exercises/{exercise_id}", tags=["Modules"])
+async def update_module_exercise(module_id: int, exercise_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
+    """Update an exercise (teacher must own the module)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    body = await request.json()
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        if row[0] != token_data.user_id and token_data.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your module")
+        fields = []; values = []
+        for key in ("title", "description", "instructions", "difficulty", "points",
+                     "solution_output", "solution_type", "test_code", "lesson_id"):
+            if key in body:
+                col = key
+                fields.append(f"{col} = %s"); values.append(body[key])
+        if "order" in body:
+            fields.append('"order" = %s'); values.append(body["order"])
+        if fields:
+            values.extend([exercise_id, module_id])
+            query = f"UPDATE exercises SET {', '.join(fields)} WHERE id = %s AND module_id = %s"
+            cursor.execute(query, tuple(values))
+    return {"success": True, "message": "Exercise updated"}
+
+@app.delete("/api/modules/{module_id}/exercises/{exercise_id}", tags=["Modules"])
+async def delete_module_exercise(module_id: int, exercise_id: int, token_data: TokenData = Depends(verify_teacher)):
+    """Delete an exercise (teacher must own the module)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        if row[0] != token_data.user_id and token_data.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your module")
+        cursor.execute("DELETE FROM exercises WHERE id = %s AND module_id = %s", (exercise_id, module_id))
+    return {"success": True, "message": "Exercise deleted"}
 
 # ============================================
 # Routes - Achievements
@@ -1972,6 +2169,10 @@ async def update_module(
         module.order = request.order
     if request.is_published is not None:
         module.is_published = request.is_published
+    if request.difficulty is not None:
+        module.difficulty = request.difficulty
+    if request.theory_content is not None:
+        module.theory_content = request.theory_content
         
     updated_module = await module_repository.update(module)
     
@@ -3064,8 +3265,8 @@ async def unenroll_student(class_id: int, student_id: int, token_data: TokenData
 # --- Classes CRUD ---
 
 @app.get("/api/classes", tags=["Classes"])
-async def list_classes():
-    """List all published classes"""
+async def list_classes(token_data: Optional[TokenData] = Depends(verify_token_optional)):
+    """List all published classes (teachers see only their own; students see all)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT c.id, c.title, c.description, c.category, c.difficulty, 
@@ -3078,12 +3279,15 @@ async def list_classes():
         LEFT JOIN class_modules cm ON cm.class_id = c.id
         LEFT JOIN class_enrollments ce ON ce.class_id = c.id AND ce.status = 'approved'
         WHERE c.is_published = TRUE
-        GROUP BY c.id, u.full_name
-        ORDER BY c.created_at DESC
     """
+    params = []
+    if token_data and token_data.role in ("teacher", "admin"):
+        query += " AND c.teacher_id = %s"
+        params.append(token_data.user_id)
+    query += " GROUP BY c.id, u.full_name ORDER BY c.created_at DESC"
     classes = []
     with PostgresConnection.get_cursor() as cursor:
-        cursor.execute(query)
+        cursor.execute(query, tuple(params) if params else None)
         for row in cursor.fetchall():
             classes.append({
                 "id": row[0], "title": row[1], "description": row[2],
@@ -3122,7 +3326,7 @@ async def get_my_classes(token_data: TokenData = Depends(verify_teacher)):
     return {"success": True, "classes": classes}
 
 @app.get("/api/classes/{class_id}", tags=["Classes"])
-async def get_class(class_id: int):
+async def get_class(class_id: int, token_data: Optional[TokenData] = Depends(verify_token_optional)):
     """Get class by ID with modules"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query_class = """
@@ -3152,6 +3356,13 @@ async def get_class(class_id: int):
             "is_published": row[6], "created_at": row[7].isoformat() if row[7] else None,
             "teacher_name": row[8]
         }
+        if token_data:
+            cursor.execute("""
+                SELECT status FROM class_enrollments WHERE student_id = %s AND class_id = %s
+            """, (token_data.user_id, class_id))
+            enr = cursor.fetchone()
+            if enr:
+                cls["enrollment_status"] = enr[0]
         cursor.execute(query_modules, (class_id,))
         modules = []
         for mrow in cursor.fetchall():
@@ -3294,7 +3505,7 @@ async def get_enrolled_classes(token_data: TokenData = Depends(verify_token)):
         FROM class_enrollments ce
         JOIN classes c ON ce.class_id = c.id
         JOIN users u ON c.teacher_id = u.id
-        WHERE ce.student_id = %s AND ce.status = 'approved'
+        WHERE ce.student_id = %s
         ORDER BY ce.enrolled_at DESC
     """
     classes = []
@@ -3335,6 +3546,40 @@ async def list_class_modules(class_id: int):
             })
     return {"success": True, "modules": modules}
 
+@app.get("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
+async def get_class_module(class_id: int, module_id: int):
+    """Get a single class module with its exercises"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT cm.id, cm.title, cm.description, cm.theory_content, cm."order"
+            FROM class_modules cm WHERE cm.id = %s AND cm.class_id = %s
+        """, (module_id, class_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Module not found")
+        mod = {
+            "id": row[0], "title": row[1], "description": row[2],
+            "theory_content": row[3], "order": row[4]
+        }
+        cursor.execute("""
+            SELECT ce.id, ce.title, ce.description, ce.instructions, ce.exercise_type,
+                   ce.difficulty, ce.points, ce."order", ce.metadata,
+                   ce.solution_output, ce.solution_type, ce.test_code
+            FROM class_exercises ce WHERE ce.class_module_id = %s ORDER BY ce."order" ASC
+        """, (module_id,))
+        exercises = []
+        for er in cursor.fetchall():
+            exercises.append({
+                "id": er[0], "title": er[1], "description": er[2],
+                "instructions": er[3], "exercise_type": er[4],
+                "difficulty": er[5], "points": er[6], "order": er[7],
+                "metadata": er[8], "solution_output": er[9],
+                "solution_type": er[10], "test_code": er[11]
+            })
+        mod["exercises"] = exercises
+    return {"success": True, "module": mod}
+
 @app.post("/api/classes/{class_id}/modules", tags=["Classes"])
 async def create_class_module(class_id: int, request: ClassModuleCreate, token_data: TokenData = Depends(verify_teacher)):
     """Create a module in a class"""
@@ -3351,8 +3596,12 @@ async def create_class_module(class_id: int, request: ClassModuleCreate, token_d
 
 @app.put("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
 async def update_class_module(class_id: int, module_id: int, request: ClassModuleUpdate, token_data: TokenData = Depends(verify_teacher)):
-    """Update a class module"""
+    """Update a class module (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not your class")
     fields = []
     values = []
     if request.title is not None:
@@ -3374,8 +3623,12 @@ async def update_class_module(class_id: int, module_id: int, request: ClassModul
 
 @app.delete("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
 async def delete_class_module(class_id: int, module_id: int, token_data: TokenData = Depends(verify_teacher)):
-    """Delete a class module"""
+    """Delete a class module (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not your class")
     query = "DELETE FROM class_modules WHERE id = %s AND class_id = %s"
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (module_id, class_id))
@@ -3389,7 +3642,8 @@ async def list_class_exercises(class_id: int, module_id: int):
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT ce.id, ce.title, ce.description, ce.instructions, ce.exercise_type,
-               ce.difficulty, ce.points, ce."order", ce.metadata
+               ce.difficulty, ce.points, ce."order", ce.metadata,
+               ce.solution_output, ce.solution_type, ce.test_code
         FROM class_exercises ce
         JOIN class_modules cm ON ce.class_module_id = cm.id
         WHERE cm.id = %s AND cm.class_id = %s
@@ -3403,7 +3657,8 @@ async def list_class_exercises(class_id: int, module_id: int):
                 "id": row[0], "title": row[1], "description": row[2],
                 "instructions": row[3], "exercise_type": row[4],
                 "difficulty": row[5], "points": row[6], "order": row[7],
-                "metadata": row[8]
+                "metadata": row[8], "solution_output": row[9],
+                "solution_type": row[10], "test_code": row[11]
             })
     return {"success": True, "exercises": exercises}
 
@@ -3412,19 +3667,24 @@ async def create_class_exercise(
     class_id: int, module_id: int, request: ClassExerciseCreate,
     token_data: TokenData = Depends(verify_teacher)
 ):
-    """Create an exercise in a class module"""
+    """Create an exercise in a class module (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     import json
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not your class")
     query = """
-        INSERT INTO class_exercises (class_module_id, title, description, instructions, exercise_type, difficulty, points, "order", metadata)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO class_exercises (class_module_id, title, description, instructions, exercise_type, difficulty, points, "order", metadata, solution_output, solution_type, test_code)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """
     metadata_json = json.dumps(request.metadata) if request.metadata else '{}'
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (module_id, request.title, request.description, request.instructions,
                                request.exercise_type, request.difficulty, request.points,
-                               request.order, metadata_json))
+                               request.order, metadata_json,
+                               request.solution_output, request.solution_type, request.test_code))
         exercise_id = cursor.fetchone()[0]
     return {"success": True, "exercise_id": exercise_id}
 
@@ -3433,9 +3693,13 @@ async def update_class_exercise(
     class_id: int, module_id: int, exercise_id: int,
     request: ClassExerciseUpdate, token_data: TokenData = Depends(verify_teacher)
 ):
-    """Update a class exercise"""
+    """Update a class exercise (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     import json
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not your class")
     fields = []; values = []
     if request.title is not None:
         fields.append("title = %s"); values.append(request.title)
@@ -3449,6 +3713,12 @@ async def update_class_exercise(
         fields.append("points = %s"); values.append(request.points)
     if request.order is not None:
         fields.append('"order" = %s'); values.append(request.order)
+    if request.solution_output is not None:
+        fields.append("solution_output = %s"); values.append(request.solution_output)
+    if request.solution_type is not None:
+        fields.append("solution_type = %s"); values.append(request.solution_type)
+    if request.test_code is not None:
+        fields.append("test_code = %s"); values.append(request.test_code)
     if request.metadata is not None:
         fields.append("metadata = %s"); values.append(json.dumps(request.metadata))
     if not fields:
@@ -3464,8 +3734,12 @@ async def delete_class_exercise(
     class_id: int, module_id: int, exercise_id: int,
     token_data: TokenData = Depends(verify_teacher)
 ):
-    """Delete a class exercise"""
+    """Delete a class exercise (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not your class")
     query = "DELETE FROM class_exercises WHERE id = %s AND class_module_id = %s"
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (exercise_id, module_id))

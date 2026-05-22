@@ -390,7 +390,7 @@ for i in range(10):
     print(i)      # 0, 1, 2, 4, 5, 6
 ```""",
 
-        "Funciones": """# Funciones
+        "Funciones": '''# Funciones
 
 Las funciones son **bloques de código reutilizables** que realizan una tarea específica.
 
@@ -443,7 +443,7 @@ def funcion():
 
 funcion()    # Dentro: 5
 print(x)     # 10
-```""",
+```''',
 
         "Listas y Tuplas": """# Listas y Tuplas
 

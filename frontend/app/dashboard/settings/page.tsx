@@ -50,6 +50,7 @@ const PREDEFINED_AVATARS = [
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const [savedProfile, setSavedProfile] = useState({
+    id: 0,
     username: "",
     email: "",
     bio: "",
@@ -98,6 +99,7 @@ export default function SettingsPage() {
         const data = await res.json()
         if (data.success) {
           const profileData = {
+            id: data.user.id || 0,
             username: data.user.full_name || "",
             email: data.user.email || "",
             bio: data.user.bio || "",
@@ -323,6 +325,61 @@ export default function SettingsPage() {
               </Form>
             </CardContent>
           </Card>
+
+          <Card className="border-primary/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-primary" />
+                Compartir Perfil
+              </CardTitle>
+              <CardDescription>
+                Comparte tu perfil de RoboLearn con otros estudiantes y docentes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+                  <Link2 className="w-5 h-5 text-muted-foreground shrink-0" />
+                  <input
+                    readOnly
+                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/profile/${savedProfile.id}`}
+                    className="flex-1 bg-transparent text-sm font-mono outline-none"
+                    onClick={e => (e.target as HTMLInputElement).select()}
+                  />
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const url = `${window.location.origin}/dashboard/profile/${savedProfile.id}`
+                    navigator.clipboard.writeText(url)
+                    toast.success("Enlace copiado al portapapeles")
+                  }}>
+                    Copiar
+                  </Button>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
+                    const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/${savedProfile.id}`)
+                    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, "_blank", "noopener")
+                  }}>
+                    <Globe className="w-6 h-6 text-blue-600" />
+                    <span className="text-xs">Facebook</span>
+                  </Button>
+                  <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
+                    const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/${savedProfile.id}`)
+                    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, "_blank", "noopener")
+                  }}>
+                    <ExternalLink className="w-6 h-6 text-blue-500" />
+                    <span className="text-xs">LinkedIn</span>
+                  </Button>
+                  <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
+                    const text = encodeURIComponent(`Mira mi perfil en RoboLearn: ${window.location.origin}/dashboard/profile/${savedProfile.id}`)
+                    window.open(`https://wa.me/?text=${text}`, "_blank", "noopener")
+                  }}>
+                    <MessageCircle className="w-6 h-6 text-green-500" />
+                    <span className="text-xs">WhatsApp</span>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="notifications">
@@ -488,16 +545,6 @@ export default function SettingsPage() {
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/20 bg-destructive/5">
                 <div>
-                  <h4 className="font-bold">Compartir Perfil</h4>
-                  <p className="text-sm text-muted-foreground">Comparte tu perfil de RoboLearn en redes sociales.</p>
-                </div>
-                <Button variant="outline" className="border-primary/30" onClick={() => setIsShareModalOpen(true)}>
-                  <Share2 className="w-4 h-4 mr-1" /> Compartir
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/20 bg-destructive/5">
-                <div>
                   <h4 className="font-bold text-destructive">Eliminar Cuenta</h4>
                   <p className="text-sm text-muted-foreground">Esta acción eliminará permanentemente todos tus datos.</p>
                 </div>
@@ -509,57 +556,6 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Compartir Perfil Modal */}
-      <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Compartir Perfil</DialogTitle>
-            <DialogDescription>Comparte tu perfil de RoboLearn con otros.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
-              <Link2 className="w-5 h-5 text-muted-foreground shrink-0" />
-              <input
-                readOnly
-                value={`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/profile/${savedProfile.username}`}
-                className="flex-1 bg-transparent text-sm font-mono outline-none"
-                onClick={e => (e.target as HTMLInputElement).select()}
-              />
-              <Button size="sm" variant="outline" onClick={() => {
-                const url = `${window.location.origin}/dashboard/profile/me`
-                navigator.clipboard.writeText(url)
-                toast.success("Enlace copiado al portapapeles")
-              }}>
-                Copiar
-              </Button>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
-                const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/me`)
-                window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, "_blank", "noopener")
-              }}>
-                <Globe className="w-6 h-6 text-blue-600" />
-                <span className="text-xs">Facebook</span>
-              </Button>
-              <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
-                const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/me`)
-                window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, "_blank", "noopener")
-              }}>
-                <ExternalLink className="w-6 h-6 text-blue-500" />
-                <span className="text-xs">LinkedIn</span>
-              </Button>
-              <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
-                const text = encodeURIComponent(`Mira mi perfil en RoboLearn: ${window.location.origin}/dashboard/profile/me`)
-                window.open(`https://wa.me/?text=${text}`, "_blank", "noopener")
-              }}>
-                <MessageCircle className="w-6 h-6 text-green-500" />
-                <span className="text-xs">WhatsApp</span>
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Confirmar Eliminar Cuenta */}
       <Dialog open={isDeleteConfirmModalOpen} onOpenChange={setIsDeleteConfirmModalOpen}>

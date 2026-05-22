@@ -10,15 +10,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import dynamic from "next/dynamic"
+import { python } from "@codemirror/lang-python"
 import { Trophy, ArrowLeft, Loader2, Code } from "lucide-react"
 
 const CodeEditor = dynamic(
   () => import("@uiw/react-codemirror").then(mod => ({ default: mod.default })),
-  { ssr: false }
-)
-
-const pythonExt = dynamic(
-  () => import("@codemirror/lang-python").then(mod => ({ default: mod.python() })),
   { ssr: false }
 )
 
@@ -127,7 +123,7 @@ export default function CreateChallengePage() {
                     value={formData.instructions}
                     height="120px"
                     theme="dark"
-                    extensions={[require("@codemirror/lang-python").python()]}
+                    extensions={[python()]}
                     onChange={v => updateField("instructions", v)}
                     style={editorTheme}
                   />
@@ -171,7 +167,7 @@ export default function CreateChallengePage() {
                     value={formData.base_code}
                     height="150px"
                     theme="dark"
-                    extensions={[require("@codemirror/lang-python").python()]}
+                    extensions={[python()]}
                     onChange={v => updateField("base_code", v)}
                     style={editorTheme}
                   />
@@ -188,7 +184,7 @@ export default function CreateChallengePage() {
                       value={formData.solution_output}
                       height="120px"
                       theme="dark"
-                      extensions={[require("@codemirror/lang-python").python()]}
+                      extensions={[python()]}
                       onChange={v => updateField("solution_output", v)}
                       style={editorTheme}
                     />
@@ -204,7 +200,7 @@ export default function CreateChallengePage() {
                       value={formData.test_code}
                       height="180px"
                       theme="dark"
-                      extensions={[require("@codemirror/lang-python").python()]}
+                      extensions={[python()]}
                       onChange={v => updateField("test_code", v)}
                       style={editorTheme}
                     />
@@ -221,7 +217,7 @@ export default function CreateChallengePage() {
                     value={formData.solution_code}
                     height="180px"
                     theme="dark"
-                    extensions={[require("@codemirror/lang-python").python()]}
+                    extensions={[python()]}
                     onChange={v => updateField("solution_code", v)}
                     style={editorTheme}
                   />
