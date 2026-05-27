@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     dialogflow_agent_id: Optional[str] = None
     google_credentials_path: Optional[str] = None
 
+    # AI / OpenAI
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4o-mini"
+
     # CORS
     cors_origins: list = [
         "*"

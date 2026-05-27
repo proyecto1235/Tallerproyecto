@@ -12,6 +12,7 @@ export function InteractiveExercise() {
   const [isAnimating, setIsAnimating] = useState(false)
   const [jumps, setJumps] = useState(0)
   const [currentJump, setCurrentJump] = useState(0)
+  const [jumpPhase, setJumpPhase] = useState<"idle" | "up" | "down">("idle")
   const [output, setOutput] = useState<string>("")
   const [isExecuting, setIsExecuting] = useState(false)
 
@@ -43,6 +44,7 @@ export function InteractiveExercise() {
         const jumpCount = data.actions.filter((a: string) => a === 'jump').length
         setJumps(jumpCount)
         setCurrentJump(0)
+        setJumpPhase("idle")
         if (jumpCount > 0) {
           setIsAnimating(true)
         }
@@ -55,16 +57,28 @@ export function InteractiveExercise() {
   }
 
   useEffect(() => {
-    if (isAnimating && currentJump < jumps) {
-      const timer = setTimeout(() => {
-        setCurrentJump(prev => prev + 1)
-      }, 800) // Jump duration
-      return () => clearTimeout(timer)
-    } else if (currentJump >= jumps && jumps > 0) {
-      setTimeout(() => {
-        setIsAnimating(false)
-      }, 500)
+    if (!isAnimating || currentJump >= jumps) {
+      if (currentJump >= jumps && jumps > 0) {
+        const t = setTimeout(() => { setIsAnimating(false) }, 400)
+        return () => clearTimeout(t)
+      }
+      return
     }
+
+    const upTimer = setTimeout(() => {
+      setJumpPhase("up")
+      const downTimer = setTimeout(() => {
+        setJumpPhase("down")
+        const nextTimer = setTimeout(() => {
+          setCurrentJump(prev => prev + 1)
+          setJumpPhase("idle")
+        }, 450)
+        return () => clearTimeout(nextTimer)
+      }, 550)
+      return () => clearTimeout(downTimer)
+    }, 50)
+
+    return () => clearTimeout(upTimer)
   }, [isAnimating, currentJump, jumps])
 
   const reset = () => {
@@ -121,7 +135,7 @@ export function InteractiveExercise() {
           {/* Status Text */}
           <div className="absolute top-4 left-4 z-10 font-mono text-sm">
             {isAnimating ? (
-              <span className="text-primary animate-pulse">Salto {currentJump}/{jumps}</span>
+              <span className="text-primary animate-pulse">Salto {currentJump + 1}/{jumps}</span>
             ) : (
               <span className="text-muted-foreground">Esperando código...</span>
             )}
@@ -130,21 +144,21 @@ export function InteractiveExercise() {
           {/* Robot Character */}
           <div className="relative z-10 mb-8">
             <div
-              className={`transition-transform duration-500 ease-in-out ${
-                isAnimating && currentJump < jumps ? '-translate-y-24' : 'translate-y-0'
+              className={`transition-transform duration-[450ms] ease-in-out ${
+                jumpPhase === "up" ? '-translate-y-24' : 'translate-y-0'
               }`}
             >
               {/* Custom Robot UI */}
-              <div className={`relative flex flex-col items-center ${isAnimating ? 'animate-bounce' : ''}`}>
+              <div className={`relative flex flex-col items-center ${jumpPhase === "up" ? 'animate-bounce' : ''}`}>
                 <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center neo-shadow-primary z-10">
                   <div className="flex gap-2">
-                    <div className={`w-3 h-3 rounded-full bg-background ${isAnimating ? 'animate-pulse' : ''}`} />
-                    <div className={`w-3 h-3 rounded-full bg-background ${isAnimating ? 'animate-pulse' : ''}`} />
+                    <div className={`w-3 h-3 rounded-full bg-background ${jumpPhase === "up" ? 'animate-pulse' : ''}`} />
+                    <div className={`w-3 h-3 rounded-full bg-background ${jumpPhase === "up" ? 'animate-pulse' : ''}`} />
                   </div>
                 </div>
                 <div className="w-8 h-12 bg-secondary rounded-b-xl -mt-2 neo-shadow" />
                 {/* Shadow on floor */}
-                <div className={`absolute -bottom-4 w-12 h-3 bg-black/20 rounded-full blur-sm transition-transform duration-500 ${isAnimating ? 'scale-50' : 'scale-100'}`} />
+                <div className={`absolute -bottom-4 w-12 h-3 bg-black/20 rounded-full blur-sm transition-transform duration-[450ms] ${jumpPhase === "up" ? 'scale-50' : 'scale-100'}`} />
               </div>
             </div>
           </div>

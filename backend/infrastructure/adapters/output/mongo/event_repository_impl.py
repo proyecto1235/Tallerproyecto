@@ -58,7 +58,7 @@ class EventRepository:
     async def _run(self, fn, *args, **kwargs):
         """Run a synchronous MongoDB operation in a thread executor"""
         db = await self.get_db()
-        if not db:
+        if db is None:
             return None
         loop = asyncio.get_event_loop()
         try:

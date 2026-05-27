@@ -73,7 +73,7 @@ export default function ClassDetailPage() {
       }
       const reqData = await reqRes.json()
       if (reqData.success) {
-        setRequests(reqData.enrollments || [])
+        setRequests(reqData.requests || [])
       }
     } catch (_) {
       // Fallback to localStorage
@@ -103,10 +103,7 @@ export default function ClassDetailPage() {
       const data = await res.json()
       if (data.success) {
         toast.success(action === "approve" ? "Matrícula aprobada" : "Matrícula rechazada")
-        // Refresh requests
-        const reqRes = await fetch(`${API}/classes/${classId}/requests`, { credentials: "include" })
-        const reqData = await reqRes.json()
-        if (reqData.success) setRequests(reqData.enrollments || [])
+        setRequests(prev => prev.filter(r => r.student_id !== studentId))
       } else {
         toast.error(data.error || "Error al procesar solicitud")
       }

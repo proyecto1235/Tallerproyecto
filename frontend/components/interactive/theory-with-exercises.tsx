@@ -8,9 +8,10 @@ interface TheoryWithExercisesProps {
   exercises: any[]
   moduleId?: number
   onComplete?: () => void
+  classModuleId?: number
 }
 
-export function TheoryWithExercises({ theory, exercises, moduleId, onComplete }: TheoryWithExercisesProps) {
+export function TheoryWithExercises({ theory, exercises, moduleId, onComplete, classModuleId }: TheoryWithExercisesProps) {
   const parts = theory.split(/\[\s*ejercicio\s*\]/gi)
   const elements: React.ReactNode[] = []
   let exerciseIndex = 0
@@ -31,6 +32,7 @@ export function TheoryWithExercises({ theory, exercises, moduleId, onComplete }:
               exercise={ex}
               moduleId={moduleId}
               onComplete={onComplete}
+              classModuleId={classModuleId}
             />
           </div>
         )
@@ -56,6 +58,7 @@ export function TheoryWithExercises({ theory, exercises, moduleId, onComplete }:
           exercise={ex}
           moduleId={moduleId}
           onComplete={onComplete}
+          classModuleId={classModuleId}
         />
       </div>
     )

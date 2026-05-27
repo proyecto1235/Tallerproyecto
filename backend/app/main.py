@@ -260,7 +260,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
     return JSONResponse(
         status_code=500,
-        content={"message": f"Internal Server Error: {str(exc)}", "type": type(exc).__name__},
+        content={"success": False, "detail": "Error interno del servidor"},
     )
 
 async def verify_token(request: Request) -> TokenData:
@@ -301,8 +301,11 @@ async def verify_token(request: Request) -> TokenData:
         )
 
 async def verify_teacher(token_data: TokenData = Depends(verify_token)) -> TokenData:
-    """Verify user is a teacher or admin"""
-    if token_data.role not in [UserRole.TEACHER.value, UserRole.ADMIN.value]:
+    """Verify user is a teacher or admin (checks DB for current role)"""
+    user = await user_repository.get_by_id(token_data.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role not in [UserRole.TEACHER, UserRole.ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires teacher privileges"
@@ -459,6 +462,7 @@ async def login(request: LoginRequest, response: Response):
             "role": user.role.value,
             "points": getattr(user, "points", 0),
             "streak_days": getattr(user, "streakDays", 0),
+            "teacher_request_status": user.teacher_request_status.value if user.teacher_request_status else None,
         }
     }
 
@@ -522,6 +526,18 @@ async def update_profile(
         return {"success": True, "message": "Profile updated successfully", "user": user.to_dict()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/users/by-public-id/{public_id}", tags=["Users"])
+async def get_user_by_public_id(public_id: str):
+    """Get user by public UUID"""
+    user = await user_repository.get_by_public_id(public_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_data = user.to_dict()
+    user_data.pop("password_hash", None)
+    return {"success": True, "user": user_data}
 
 @app.get("/api/users/{user_id}", tags=["Users"])
 async def get_user(user_id: int):
@@ -657,10 +673,16 @@ async def get_class_predictions(
             """, (token_data.user_id, module_id))
         else:
             cursor.execute("""
-                SELECT DISTINCT e.student_id FROM enrollments e
-                JOIN modules m ON e.module_id = m.id
-                WHERE m.teacher_id = %s AND e.status IN ('active', 'completed')
-            """, (token_data.user_id,))
+                SELECT DISTINCT student_id FROM (
+                    SELECT e.student_id FROM enrollments e
+                    JOIN modules m ON e.module_id = m.id
+                    WHERE m.teacher_id = %s AND e.status IN ('active', 'completed')
+                    UNION
+                    SELECT ce.student_id FROM class_enrollments ce
+                    JOIN classes c ON ce.class_id = c.id
+                    WHERE c.teacher_id = %s AND ce.status = 'approved'
+                ) AS all_students
+            """, (token_data.user_id, token_data.user_id))
         student_rows = cursor.fetchall()
 
     if not student_rows:
@@ -763,7 +785,7 @@ async def get_analytics_dashboard(
 
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     try:
-        db = behavioral_repo.get_db()
+        db = await behavioral_repo.get_db()
 
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
         daily_activity = list(db.behavioral_events.aggregate([
@@ -828,7 +850,7 @@ async def tutor_ask(
     )
 
     try:
-        db = behavioral_repo.get_db()
+        db = await behavioral_repo.get_db()
         db.tutor_interactions.insert_one({
             "user_id": user_id or 0,
             "session_id": session_id,
@@ -961,7 +983,7 @@ async def tutor_feedback(
     message = body.get("message", "")
 
     try:
-        db = behavioral_repo.get_db()
+        db = await behavioral_repo.get_db()
         db.tutor_feedback.insert_one({
             "user_id": token_data.user_id,
             "helpful": helpful,
@@ -996,7 +1018,7 @@ async def chat_public(request: PublicChatRequest):
     except Exception:
         pass
 
-    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response:
+    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
         return {"success": True, "message": dialogflow_response, "session_id": session_id}
 
     tutor_result = await intelligent_tutor.generate_response(
@@ -1034,7 +1056,7 @@ async def chat(
     except Exception:
         pass
 
-    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response:
+    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
         await event_repository.log_chat_interaction(
             token_data.user_id,
             request.message,
@@ -1055,6 +1077,33 @@ async def chat(
 
     response_text = tutor_result["response"]
 
+    # Third tier: OpenAI fallback if tutor confidence is low and API key is configured
+    if tutor_result.get("intent") in ("general_chat", "fallback") and settings.openai_api_key:
+        try:
+            import openai
+            openai.api_key = settings.openai_api_key
+            sys_prompt = f"""Eres un tutor amigable de RoboLearn, una plataforma educativa de programación y robótica.
+El estudiante tiene nivel {tutor_result.get('student_level', 'beginner')}.
+Contexto: {json.dumps(student_profile or {}, default=str)[:500]}
+Responde de forma breve, clara y en español. Si la consulta no es educativa, redirige amablemente al temario."""
+            ai_res = await asyncio.get_event_loop().run_in_executor(None, lambda: openai.chat.completions.create(
+                model=settings.openai_model,
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": request.message},
+                ],
+                max_tokens=300,
+                temperature=0.7,
+            ))
+            ai_text = ai_res.choices[0].message.content.strip()
+            if ai_text and len(ai_text) > 10:
+                response_text = ai_text
+                tutor_result["source"] = "openai"
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[OpenAI fallback error] {e}")
+
     await event_repository.log_chat_interaction(
         token_data.user_id,
         request.message,
@@ -1063,7 +1112,7 @@ async def chat(
     )
 
     try:
-        db = behavioral_repo.get_db()
+        db = await behavioral_repo.get_db()
         db.tutor_interactions.insert_one({
             "user_id": token_data.user_id,
             "session_id": session_id,
@@ -1185,10 +1234,13 @@ async def submit_exercise(
     """Submit an exercise attempt, grade it, and track attempts"""
     import io
     from contextlib import redirect_stdout
-    
+
     student_id = token_data.user_id
-    
-    # Get the exercise
+
+    if request.is_class_exercise:
+        return await _submit_class_exercise(request, student_id)
+
+    # --- Global exercise flow ---
     query = "SELECT id, module_id, solution_output, solution_type, test_code, title, points, lesson_id FROM exercises WHERE id = %s"
     exercise = None
     with PostgresConnection.get_cursor() as cursor:
@@ -1200,13 +1252,12 @@ async def submit_exercise(
                 "solution_type": row[3] or "output", "test_code": row[4],
                 "title": row[5], "points": row[6], "lesson_id": row[7]
             }
-    
+
     if not exercise:
         raise HTTPException(status_code=404, detail="Exercise not found")
-    
-    # Get previous attempt count
+
     attempt_query = """
-        SELECT attempt_count, passed FROM exercise_attempts 
+        SELECT attempt_count, passed FROM exercise_attempts
         WHERE student_id = %s AND exercise_id = %s
         ORDER BY submitted_at DESC LIMIT 1
     """
@@ -1218,13 +1269,10 @@ async def submit_exercise(
         if row:
             prev_attempts = row[0] or 0
             already_passed = row[1]
-    
+
     if already_passed:
         return {"success": True, "passed": True, "message": "Ya habías resuelto este ejercicio", "attempts": prev_attempts}
-    
-    attempt_count = prev_attempts + 1
-    
-    # Execute and grade the code
+
     safe_builtins = {
         'print': print, 'len': len, 'range': range, 'int': int,
         'float': float, 'str': str, 'bool': bool, 'list': list,
@@ -1238,25 +1286,23 @@ async def submit_exercise(
         'KeyError': KeyError, 'IndexError': IndexError,
         'Exception': Exception,
     }
-    
+
     f = io.StringIO()
     error = None
     passed = False
     score = 0
-    
-    # Combine student code with test code if solution_type is 'test'
+
     code_to_run = request.code
     if exercise["solution_type"] == "test" and exercise["test_code"]:
         code_to_run = request.code + "\n\n" + exercise["test_code"]
-    
+
     try:
         env = {"__builtins__": safe_builtins}
         with redirect_stdout(f):
             exec(code_to_run, env)
-        
+
         output = f.getvalue()
-        
-        # Grade based on solution_type
+
         if exercise["solution_type"] == "output" and exercise["solution_output"]:
             expected = exercise["solution_output"].replace("\\n", "\n").strip()
             actual = output.strip()
@@ -1265,32 +1311,37 @@ async def submit_exercise(
         else:
             passed = True
             score = 100.0
-            
+
     except Exception as e:
         error = str(e)
         passed = False
         score = 0.0
-    
-    # Record the attempt
+
     insert_query = """
         INSERT INTO exercise_attempts (student_id, exercise_id, passed, score, attempt_count)
-        VALUES (%s, %s, %s, %s, %s)
+        SELECT %s, %s, %s, %s, COALESCE(MAX(attempt_count), 0) + 1
+        FROM exercise_attempts WHERE student_id = %s AND exercise_id = %s
+        ON CONFLICT (student_id, exercise_id, attempt_count) DO NOTHING
+        RETURNING attempt_count
     """
-    with PostgresConnection.get_cursor() as cursor:
-        cursor.execute(insert_query, (student_id, request.exercise_id, passed, score, attempt_count))
-    
-    # Update progress if passed
-    if passed:
-        # Add points to user
+    attempt_count = 1
+    for _ in range(3):
         with PostgresConnection.get_cursor() as cursor:
-            cursor.execute("UPDATE users SET points = COALESCE(points, 0) + %s WHERE id = %s", 
+            cursor.execute(insert_query, (student_id, request.exercise_id, passed, score, student_id, request.exercise_id))
+            result = cursor.fetchone()
+            if result:
+                attempt_count = result[0]
+                break
+
+    if passed:
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute("UPDATE users SET points = COALESCE(points, 0) + %s WHERE id = %s",
                           (exercise["points"], student_id))
-        
-        # Update progress table
+
         with PostgresConnection.get_cursor() as cursor:
             cursor.execute("""
                 INSERT INTO progress (student_id, module_id, completed_exercises, total_exercises, points_earned, percentage, last_activity)
-                VALUES (%s, %s, 1, (SELECT COUNT(*) FROM exercises WHERE module_id = %s), %s, 
+                VALUES (%s, %s, 1, (SELECT COUNT(*) FROM exercises WHERE module_id = %s), %s,
                     (SELECT ROUND(COUNT(*)::numeric / (SELECT COUNT(*) FROM exercises WHERE module_id = %s) * 100, 2) FROM exercise_attempts WHERE student_id = %s AND exercise_id IN (SELECT id FROM exercises WHERE module_id = %s) AND passed = TRUE), NOW())
                 ON CONFLICT (student_id, module_id) DO UPDATE SET
                     completed_exercises = (SELECT COUNT(*) FROM exercise_attempts WHERE student_id = %s AND exercise_id IN (SELECT id FROM exercises WHERE module_id = %s) AND passed = TRUE),
@@ -1301,23 +1352,18 @@ async def submit_exercise(
                   request.module_id, student_id, request.module_id,
                   student_id, request.module_id, exercise["points"],
                   request.module_id, student_id, request.module_id))
-        
-        # Auto-complete lesson if all its exercises are passed
+
         lesson_id = exercise.get("lesson_id")
         if lesson_id:
             with PostgresConnection.get_cursor() as cursor:
-                cursor.execute("""
-                    SELECT COUNT(*) FROM exercises WHERE lesson_id = %s
-                """, (lesson_id,))
+                cursor.execute("SELECT COUNT(*) FROM exercises WHERE lesson_id = %s", (lesson_id,))
                 total_in_lesson = cursor.fetchone()[0] or 0
-
                 cursor.execute("""
                     SELECT COUNT(*) FROM exercise_attempts ea
                     JOIN exercises e ON e.id = ea.exercise_id
                     WHERE e.lesson_id = %s AND ea.student_id = %s AND ea.passed = TRUE
                 """, (lesson_id, student_id))
                 passed_in_lesson = cursor.fetchone()[0] or 0
-
             if total_in_lesson > 0 and passed_in_lesson >= total_in_lesson:
                 with PostgresConnection.get_cursor() as cursor:
                     cursor.execute("""
@@ -1325,22 +1371,19 @@ async def submit_exercise(
                         VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
                     """, (student_id, lesson_id, request.module_id))
 
-        # Check and award achievements
         await check_and_award_achievements(student_id)
-        
-        # Log event
         await event_repository.log_event("exercise_passed", student_id, {
             "exercise_id": request.exercise_id,
             "module_id": request.module_id,
             "attempts": attempt_count,
             "points_earned": exercise["points"]
         })
-    
+
     can_view_solution = attempt_count >= 3 and not passed
     solution = None
     if can_view_solution or passed:
         solution = exercise.get("solution_output", "").replace("\\n", "\n")
-    
+
     return {
         "success": True,
         "passed": passed,
@@ -1352,6 +1395,131 @@ async def submit_exercise(
         "solution": solution if (can_view_solution or passed) else None,
         "points_earned": exercise["points"] if passed else 0
     }
+
+
+async def _submit_class_exercise(request: ExerciseSubmit, student_id: int):
+    """Handle submission of a class exercise (stored in class_exercises table)"""
+    import io
+    from contextlib import redirect_stdout
+
+    module_id = request.class_module_id or request.module_id
+
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT ce.id, ce.solution_output, ce.solution_type, ce.test_code,
+                   ce.title, ce.points
+            FROM class_exercises ce
+            WHERE ce.id = %s AND ce.class_module_id = %s
+        """, (request.exercise_id, module_id))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Class exercise not found")
+        exercise = {
+            "id": row[0], "solution_output": row[1],
+            "solution_type": row[2] or "output", "test_code": row[3],
+            "title": row[4], "points": row[5] or 10,
+        }
+
+    # Previous attempts
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT attempt_count, passed FROM class_exercise_attempts
+            WHERE student_id = %s AND class_exercise_id = %s
+            ORDER BY submitted_at DESC LIMIT 1
+        """, (student_id, request.exercise_id))
+        row = cursor.fetchone()
+    prev_attempts = row[0] if row else 0
+    already_passed = row[1] if row else False
+
+    if already_passed:
+        return {"success": True, "passed": True, "message": "Ya habías resuelto este ejercicio", "attempts": prev_attempts}
+
+    safe_builtins = {
+        'print': print, 'len': len, 'range': range, 'int': int,
+        'float': float, 'str': str, 'bool': bool, 'list': list,
+        'dict': dict, 'tuple': tuple, 'set': set, 'type': type,
+        'True': True, 'False': False, 'None': None,
+        'abs': abs, 'max': max, 'min': min, 'sum': sum,
+        'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
+        'zip': zip, 'map': map, 'filter': filter, 'all': all, 'any': any,
+        'round': round, 'isinstance': isinstance,
+        'ValueError': ValueError, 'TypeError': TypeError,
+        'KeyError': KeyError, 'IndexError': IndexError,
+        'Exception': Exception,
+    }
+
+    f = io.StringIO()
+    error = None
+    passed = False
+    score = 0
+
+    code_to_run = request.code
+    if exercise["solution_type"] == "test" and exercise["test_code"]:
+        code_to_run = request.code + "\n\n" + exercise["test_code"]
+
+    try:
+        env = {"__builtins__": safe_builtins}
+        with redirect_stdout(f):
+            exec(code_to_run, env)
+        output = f.getvalue()
+        if exercise["solution_type"] == "output" and exercise["solution_output"]:
+            expected = exercise["solution_output"].replace("\\n", "\n").strip()
+            passed = (output.strip() == expected)
+            score = 100.0 if passed else 0.0
+        else:
+            passed = True
+            score = 100.0
+    except Exception as e:
+        error = str(e)
+        passed = False
+        score = 0.0
+
+    insert_query = """
+        INSERT INTO class_exercise_attempts (student_id, class_exercise_id, class_module_id, passed, score, attempt_count)
+        SELECT %s, %s, %s, %s, %s, COALESCE(MAX(attempt_count), 0) + 1
+        FROM class_exercise_attempts WHERE student_id = %s AND class_exercise_id = %s
+        ON CONFLICT (student_id, class_exercise_id, attempt_count) DO NOTHING
+        RETURNING attempt_count
+    """
+    attempt_count = 1
+    for _ in range(3):
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute(insert_query, (student_id, request.exercise_id, module_id, passed, score, student_id, request.exercise_id))
+            result = cursor.fetchone()
+            if result:
+                attempt_count = result[0]
+                break
+
+    if passed:
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute("UPDATE users SET points = COALESCE(points, 0) + %s WHERE id = %s",
+                          (exercise["points"], student_id))
+        await check_and_award_achievements(student_id)
+        await event_repository.log_event("exercise_passed", student_id, {
+            "exercise_id": request.exercise_id,
+            "module_id": module_id,
+            "attempts": attempt_count,
+            "points_earned": exercise["points"],
+            "is_class_exercise": True,
+        })
+
+    can_view_solution = attempt_count >= 3 and not passed
+    solution = None
+    if can_view_solution or passed:
+        solution = exercise.get("solution_output", "").replace("\\n", "\n")
+
+    return {
+        "success": True,
+        "passed": passed,
+        "score": score,
+        "output": f.getvalue() if not error else None,
+        "error": error,
+        "attempts": attempt_count,
+        "can_view_solution": can_view_solution,
+        "solution": solution if (can_view_solution or passed) else None,
+        "points_earned": exercise["points"] if passed else 0,
+    }
+
 
 @app.get("/api/exercises/{exercise_id}/attempts", tags=["Exercises"])
 async def get_exercise_attempts(exercise_id: int, token_data: TokenData = Depends(verify_token)):
@@ -1393,6 +1561,82 @@ async def get_exercise_attempts(exercise_id: int, token_data: TokenData = Depend
         "already_passed": last_passed,
         "solution": solution
     }
+
+@app.get("/api/exercises/difficulty-analysis", tags=["Exercises"])
+async def get_exercise_difficulty_analysis(token_data: TokenData = Depends(verify_teacher)):
+    """Analyze exercise difficulty based on student performance and suggest adjustments"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT 
+            e.id, e.title, e.difficulty as current_difficulty, e.points, e.module_id,
+            m.title as module_title,
+            COUNT(ea.id) as total_attempts,
+            COALESCE(AVG(ea.score), 0) as avg_score,
+            COUNT(CASE WHEN ea.passed = TRUE THEN 1 END) as passed_count,
+            COUNT(DISTINCT ea.student_id) as unique_students
+        FROM exercises e
+        JOIN modules m ON e.module_id = m.id
+        LEFT JOIN exercise_attempts ea ON e.id = ea.exercise_id
+        WHERE m.teacher_id = %s OR %s IN (SELECT id FROM users WHERE role = 'admin')
+        GROUP BY e.id, e.title, e.difficulty, e.points, e.module_id, m.title
+        HAVING COUNT(ea.id) > 0
+        ORDER BY CAST(AVG(ea.score) AS DECIMAL) ASC
+    """
+    suggestions = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (token_data.user_id, token_data.user_id))
+        for row in cursor.fetchall():
+            ex_id = row[0]
+            title = row[1]
+            current_diff = row[2]
+            points = row[3]
+            module_id = row[4]
+            module_title = row[5]
+            total_attempts = row[6] or 0
+            avg_score = float(row[7] or 0)
+            passed_count = row[8] or 0
+            unique_students = row[9] or 0
+            pass_rate = (passed_count / total_attempts * 100) if total_attempts > 0 else 0
+
+            suggestion = None
+            suggested_diff = current_diff
+            if pass_rate < 30 and current_diff > 1:
+                suggestion = {
+                    "type": "too_hard",
+                    "message": f"Ejercicio muy difícil: solo {round(pass_rate)}% de acierto en {total_attempts} intentos. Considera reducir dificultad de {current_diff} a {max(1, current_diff - 1)}.",
+                    "alternative": f"Puedes agregar una versión más guiada o reducir la complejidad del código esperado."
+                }
+                suggested_diff = max(1, current_diff - 1)
+            elif pass_rate > 85 and current_diff < 5:
+                suggestion = {
+                    "type": "too_easy",
+                    "message": f"Ejercicio muy fácil: {round(pass_rate)}% de acierto. Considera subir dificultad de {current_diff} a {min(5, current_diff + 1)}.",
+                    "alternative": f"Puedes agregar variantes que requieran lógica más compleja o combinar conceptos."
+                }
+                suggested_diff = min(5, current_diff + 1)
+            elif unique_students >= 3 and avg_score < 50:
+                suggestion = {
+                    "type": "needs_review",
+                    "message": f"Los estudiantes tienen dificultades (promedio {round(avg_score)}%). Revisa el enunciado o agrega ejercicios de refuerzo previos.",
+                    "alternative": f"Considera agregar un ejercicio intermedio que sirva de puente antes de este."
+                }
+
+            if suggestion:
+                suggestions.append({
+                    "exercise_id": ex_id,
+                    "title": title,
+                    "module_title": module_title,
+                    "module_id": module_id,
+                    "current_difficulty": current_diff,
+                    "suggested_difficulty": suggested_diff,
+                    "pass_rate": round(pass_rate, 1),
+                    "avg_score": round(avg_score, 1),
+                    "total_attempts": total_attempts,
+                    "unique_students": unique_students,
+                    **suggestion
+                })
+
+    return {"success": True, "suggestions": suggestions}
 
 # ============================================
 # Routes - Module Completion
@@ -2466,7 +2710,7 @@ async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
     try:
         from datetime import timedelta
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        mongo_events = event_repository.db["events"].aggregate([
+        mongo_events = (await event_repository.get_db())["events"].aggregate([
             {"$match": {
                 "user_id": student_id,
                 "timestamp": {"$gte": week_ago}
@@ -2543,16 +2787,18 @@ async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
     
     # Save progress snapshot to MongoDB
     try:
-        event_repository.db["progress_snapshots"].insert_one({
-            "user_id": student_id,
-            "timestamp": datetime.now(timezone.utc),
-            "completed_modules": progress["completedLessons"],
-            "total_modules": progress["totalLessons"],
-            "completed_exercises": completed_exercises,
-            "total_exercises": total_exercises,
-            "points": points,
-            "streak_days": streak_days
-        })
+        db = await event_repository.get_db()
+        if db is not None:
+            db["progress_snapshots"].insert_one({
+                "user_id": student_id,
+                "timestamp": datetime.now(timezone.utc),
+                "completed_modules": progress["completedLessons"],
+                "total_modules": progress["totalLessons"],
+                "completed_exercises": completed_exercises,
+                "total_exercises": total_exercises,
+                "points": points,
+                "streak_days": streak_days
+            })
     except Exception as e:
         print(f"[WARN] MongoDB snapshot failed: {e}")
             
@@ -2598,7 +2844,8 @@ async def get_admin_dashboard(token_data: TokenData = Depends(verify_admin)):
     
     # Sync with MongoDB
     try:
-        event_repository.get_db()["admin_stats"].insert_one({
+        db_stats = await event_repository.get_db()
+        db_stats["admin_stats"].insert_one({
             "timestamp": datetime.now(timezone.utc), **stats
         })
     except:
@@ -2610,7 +2857,7 @@ async def get_admin_dashboard(token_data: TokenData = Depends(verify_admin)):
 async def get_audit_logs(limit: int = 50, token_data: TokenData = Depends(verify_admin)):
     """Get audit logs from MongoDB events"""
     try:
-        db = event_repository.get_db()
+        db = await event_repository.get_db()
         events = list(db.events.find().sort("timestamp", -1).limit(limit))
         for event in events:
             event["_id"] = str(event["_id"])
@@ -2729,27 +2976,29 @@ async def admin_update_module_content(module_id: int, request: Request, token_da
     
     # Update lessons if provided
     if "lessons" in body:
-        for lesson in body["lessons"]:
-            if "id" in lesson:
-                cursor.execute("""
-                    UPDATE lessons SET title = %s, theory_content = %s, "order" = %s
-                    WHERE id = %s AND module_id = %s
-                """, (lesson.get("title"), lesson.get("theory_content"), 
-                      lesson.get("order", 0), lesson["id"], module_id))
+        with PostgresConnection.get_cursor() as cursor:
+            for lesson in body["lessons"]:
+                if "id" in lesson:
+                    cursor.execute("""
+                        UPDATE lessons SET title = %s, theory_content = %s, "order" = %s
+                        WHERE id = %s AND module_id = %s
+                    """, (lesson.get("title"), lesson.get("theory_content"), 
+                          lesson.get("order", 0), lesson["id"], module_id))
     
     # Update exercises if provided
     if "exercises" in body:
-        for ex in body["exercises"]:
-            if "id" in ex:
-                cursor.execute("""
-                    UPDATE exercises SET title = %s, description = %s, instructions = %s,
-                        difficulty = %s, points = %s, "order" = %s,
-                        solution_output = %s, solution_type = %s
-                    WHERE id = %s AND module_id = %s
-                """, (ex.get("title"), ex.get("description"), ex.get("instructions"),
-                      ex.get("difficulty", 1), ex.get("points", 10), ex.get("order", 0),
-                      ex.get("solution_output"), ex.get("solution_type", "output"),
-                      ex["id"], module_id))
+        with PostgresConnection.get_cursor() as cursor:
+            for ex in body["exercises"]:
+                if "id" in ex:
+                    cursor.execute("""
+                        UPDATE exercises SET title = %s, description = %s, instructions = %s,
+                            difficulty = %s, points = %s, "order" = %s,
+                            solution_output = %s, solution_type = %s
+                        WHERE id = %s AND module_id = %s
+                    """, (ex.get("title"), ex.get("description"), ex.get("instructions"),
+                          ex.get("difficulty", 1), ex.get("points", 10), ex.get("order", 0),
+                          ex.get("solution_output"), ex.get("solution_type", "output"),
+                          ex["id"], module_id))
     
     await event_repository.log_event("module_content_edited", token_data.user_id, {"module_id": module_id})
     
@@ -3248,10 +3497,15 @@ async def reject_enrollment_batch(request: Request, token_data: TokenData = Depe
 
 @app.post("/api/classes/{class_id}/unenroll/{student_id}", tags=["Teacher"])
 async def unenroll_student(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
-    """Unenroll a student from a class/module"""
+    """Unenroll a student from a class (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
-    query = "DELETE FROM enrollments WHERE module_id = %s AND student_id = %s"
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="No eres el docente de esta clase")
+    
+    query = "DELETE FROM class_enrollments WHERE class_id = %s AND student_id = %s"
     
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (class_id, student_id))
@@ -3322,6 +3576,33 @@ async def get_my_classes(token_data: TokenData = Depends(verify_teacher)):
                 "category": row[3], "difficulty": row[4], "teacher_id": row[5],
                 "is_published": row[6], "created_at": row[7].isoformat() if row[7] else None,
                 "module_count": row[8], "student_count": row[9]
+            })
+    return {"success": True, "classes": classes}
+
+@app.get("/api/classes/enrolled", tags=["Classes"])
+async def get_enrolled_classes(token_data: TokenData = Depends(verify_token)):
+    """Get classes the student is enrolled in (approved only)"""
+    from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    query = """
+        SELECT c.id, c.title, c.description, c.category, c.difficulty,
+               c.teacher_id, u.full_name as teacher_name,
+               ce.status as enrollment_status, ce.enrolled_at, ce.approved_at
+        FROM class_enrollments ce
+        JOIN classes c ON ce.class_id = c.id
+        JOIN users u ON c.teacher_id = u.id
+        WHERE ce.student_id = %s
+        ORDER BY ce.enrolled_at DESC
+    """
+    classes = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (token_data.user_id,))
+        for row in cursor.fetchall():
+            classes.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "category": row[3], "difficulty": row[4], "teacher_id": row[5],
+                "teacher_name": row[6], "enrollment_status": row[7],
+                "enrolled_at": row[8].isoformat() if row[8] else None,
+                "approved_at": row[9].isoformat() if row[9] else None
             })
     return {"success": True, "classes": classes}
 
@@ -3431,13 +3712,21 @@ async def delete_class(class_id: int, token_data: TokenData = Depends(verify_tea
 async def enroll_class(class_id: int, token_data: TokenData = Depends(verify_token)):
     """Request enrollment in a class"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
-    query = """
-        INSERT INTO class_enrollments (student_id, class_id, status)
-        VALUES (%s, %s, 'pending')
-        ON CONFLICT (student_id, class_id) DO UPDATE SET status = 'pending'
-        RETURNING id
-    """
     with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT status FROM class_enrollments
+            WHERE student_id = %s AND class_id = %s
+        """, (token_data.user_id, class_id))
+        row = cursor.fetchone()
+        if row and row[0] == "approved":
+            raise HTTPException(status_code=400, detail="Ya estás matriculado en esta clase")
+        # Allow re-request if rejected or no previous enrollment
+        query = """
+            INSERT INTO class_enrollments (student_id, class_id, status)
+            VALUES (%s, %s, 'pending')
+            ON CONFLICT (student_id, class_id) DO UPDATE SET status = 'pending'
+            RETURNING id
+        """
         cursor.execute(query, (token_data.user_id, class_id))
         enrollment_id = cursor.fetchone()[0]
     return {"success": True, "enrollment_id": enrollment_id, "status": "pending"}
@@ -3494,37 +3783,10 @@ async def reject_enrollment(class_id: int, student_id: int, token_data: TokenDat
         cursor.execute(query, (class_id, student_id, token_data.user_id))
     return {"success": True, "message": "Enrollment rejected"}
 
-@app.get("/api/classes/enrolled", tags=["Classes"])
-async def get_enrolled_classes(token_data: TokenData = Depends(verify_token)):
-    """Get classes the student is enrolled in (approved only)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
-    query = """
-        SELECT c.id, c.title, c.description, c.category, c.difficulty,
-               c.teacher_id, u.full_name as teacher_name,
-               ce.status as enrollment_status, ce.enrolled_at, ce.approved_at
-        FROM class_enrollments ce
-        JOIN classes c ON ce.class_id = c.id
-        JOIN users u ON c.teacher_id = u.id
-        WHERE ce.student_id = %s
-        ORDER BY ce.enrolled_at DESC
-    """
-    classes = []
-    with PostgresConnection.get_cursor() as cursor:
-        cursor.execute(query, (token_data.user_id,))
-        for row in cursor.fetchall():
-            classes.append({
-                "id": row[0], "title": row[1], "description": row[2],
-                "category": row[3], "difficulty": row[4], "teacher_id": row[5],
-                "teacher_name": row[6], "enrollment_status": row[7],
-                "enrolled_at": row[8].isoformat() if row[8] else None,
-                "approved_at": row[9].isoformat() if row[9] else None
-            })
-    return {"success": True, "classes": classes}
-
 # --- Class Modules CRUD ---
 
 @app.get("/api/classes/{class_id}/modules", tags=["Classes"])
-async def list_class_modules(class_id: int):
+async def list_class_modules(class_id: int, token_data: TokenData = Depends(verify_token)):
     """List modules in a class"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
@@ -3547,9 +3809,22 @@ async def list_class_modules(class_id: int):
     return {"success": True, "modules": modules}
 
 @app.get("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
-async def get_class_module(class_id: int, module_id: int):
-    """Get a single class module with its exercises"""
+async def get_class_module(
+    class_id: int, module_id: int,
+    token_data: TokenData = Depends(verify_token),
+):
+    """Get a single class module with its exercises (enrollment required)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
+
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT status FROM class_enrollments
+            WHERE student_id = %s AND class_id = %s AND status = 'approved'
+        """, (token_data.user_id, class_id))
+        enrollment = cursor.fetchone()
+        if not enrollment:
+            raise HTTPException(status_code=403, detail="No estás matriculado en esta clase")
+
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             SELECT cm.id, cm.title, cm.description, cm.theory_content, cm."order"
@@ -3582,8 +3857,12 @@ async def get_class_module(class_id: int, module_id: int):
 
 @app.post("/api/classes/{class_id}/modules", tags=["Classes"])
 async def create_class_module(class_id: int, request: ClassModuleCreate, token_data: TokenData = Depends(verify_teacher)):
-    """Create a module in a class"""
+    """Create a module in a class (teacher must own the class)"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not your class")
     query = """
         INSERT INTO class_modules (class_id, title, description, theory_content, "order")
         VALUES (%s, %s, %s, %s, %s)
@@ -3637,7 +3916,7 @@ async def delete_class_module(class_id: int, module_id: int, token_data: TokenDa
 # --- Class Exercises CRUD ---
 
 @app.get("/api/classes/{class_id}/modules/{module_id}/exercises", tags=["Classes"])
-async def list_class_exercises(class_id: int, module_id: int):
+async def list_class_exercises(class_id: int, module_id: int, token_data: TokenData = Depends(verify_token)):
     """List exercises for a class module"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """

@@ -51,7 +51,7 @@ class BehavioralRepository:
 
     async def _exec(self, fn):
         db = await self.get_db()
-        if not db:
+        if db is None:
             return None
         loop = asyncio.get_event_loop()
         try:
@@ -61,7 +61,7 @@ class BehavioralRepository:
 
     async def log_session_start(self, user_id: int, session_id: str):
         db = await self.get_db()
-        if not db: return
+        if db is None: return
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: db.sessions.insert_one({
             "user_id": user_id, "session_id": session_id,
@@ -72,7 +72,7 @@ class BehavioralRepository:
 
     async def log_session_activity(self, user_id: int, session_id: str):
         db = await self.get_db()
-        if not db: return
+        if db is None: return
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: db.sessions.update_one(
             {"session_id": session_id, "user_id": user_id},
@@ -81,7 +81,7 @@ class BehavioralRepository:
 
     async def log_session_end(self, user_id: int, session_id: str):
         db = await self.get_db()
-        if not db: return 0
+        if db is None: return 0
         loop = asyncio.get_event_loop()
         try:
             session = await loop.run_in_executor(None, lambda: db.sessions.find_one_and_update(
@@ -105,7 +105,7 @@ class BehavioralRepository:
     async def log_exercise_action(self, user_id: int, exercise_id: int, module_id: int,
                                    action: str, metadata: Optional[Dict] = None):
         db = await self.get_db()
-        if not db: return
+        if db is None: return
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: db.behavioral_events.insert_one({
             "user_id": user_id, "exercise_id": exercise_id,
@@ -116,7 +116,7 @@ class BehavioralRepository:
     async def log_frustration_signal(self, user_id: int, exercise_id: int,
                                       signal_type: str, details: Optional[str] = None):
         db = await self.get_db()
-        if not db: return
+        if db is None: return
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: db.frustration_signals.insert_one({
             "user_id": user_id, "exercise_id": exercise_id,
@@ -127,7 +127,7 @@ class BehavioralRepository:
     async def log_code_analysis(self, user_id: int, exercise_id: int, code: str,
                                  error: Optional[str], error_type: Optional[str]):
         db = await self.get_db()
-        if not db: return
+        if db is None: return
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: db.code_analysis.insert_one({
             "user_id": user_id, "exercise_id": exercise_id,
@@ -138,7 +138,7 @@ class BehavioralRepository:
 
     async def update_engagement_score(self, user_id: int, module_id: Optional[int] = None):
         db = await self.get_db()
-        if not db: return {"engagement_score": 0.5}
+        if db is None: return {"engagement_score": 0.5}
         loop = asyncio.get_event_loop()
         try:
             def _calc():
@@ -170,7 +170,7 @@ class BehavioralRepository:
 
     async def get_student_behavioral_profile(self, user_id: int) -> Dict:
         db = await self.get_db()
-        if not db: return {"engagement_score": 0.5}
+        if db is None: return {"engagement_score": 0.5}
         loop = asyncio.get_event_loop()
         try:
             def _get():
@@ -211,7 +211,7 @@ class BehavioralRepository:
 
     async def _count_exercise_attempts_30d(self, user_id: int) -> int:
         db = await self.get_db()
-        if not db: return 0
+        if db is None: return 0
         loop = asyncio.get_event_loop()
         try:
             return await loop.run_in_executor(None, lambda: db.exercise_attempts.count_documents({

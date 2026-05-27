@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
 
-export function InlineExercise({ exercise, moduleId, onComplete }: { exercise: any; moduleId?: number; onComplete?: () => void }) {
+export function InlineExercise({ exercise, moduleId, onComplete, classModuleId }: { exercise: any; moduleId?: number; onComplete?: () => void; classModuleId?: number }) {
   const [code, setCode] = useState(exercise.instructions || "# Escribe tu código aquí\n")
   const [output, setOutput] = useState<string>("")
   const [isExecuting, setIsExecuting] = useState(false)
@@ -35,7 +35,9 @@ export function InlineExercise({ exercise, moduleId, onComplete }: { exercise: a
         body: JSON.stringify({
           exercise_id: exercise.id,
           code: code,
-          module_id: moduleId || exercise.module_id || 0
+          module_id: classModuleId || moduleId || exercise.module_id || 0,
+          is_class_exercise: !!classModuleId,
+          class_module_id: classModuleId || 0
         })
       })
 
@@ -53,7 +55,7 @@ export function InlineExercise({ exercise, moduleId, onComplete }: { exercise: a
         if (onComplete) onComplete()
       } else {
         setStatus("error")
-        setAttempts(data.attempts || attempts + 1)
+        setAttempts(data.attempts ?? attempts + 1)
         setOutput(prev => {
           let msg = prev || ""
           if (data.error) msg += `\nError: ${data.error}`

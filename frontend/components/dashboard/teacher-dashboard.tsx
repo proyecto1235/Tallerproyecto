@@ -33,75 +33,64 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
     activeClasses: 0,
     pendingRequests: 0,
     avgProgress: 0,
+    completionRate: 0,
+    activeStudents: 0,
+    insights: [] as string[],
   })
-  
+  const [alerts, setAlerts] = useState<any[]>([])
+  const [students, setStudents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchMetrics = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/teacher/dashboard", {
-          credentials: "include"
-        })
-        const data = await res.json()
-        if (data.success && data.metrics) {
+        const [metricsRes, alertsRes, studentsRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/dashboard`, { credentials: "include" }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/alerts`, { credentials: "include" }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/students`, { credentials: "include" }),
+        ])
+        const metricsData = await metricsRes.json()
+        const alertsData = await alertsRes.json()
+        const studentsData = await studentsRes.json()
+
+        if (metricsData.success && metricsData.metrics) {
           setStats({
-            totalStudents: data.metrics.total_students || 0,
-            activeClasses: data.metrics.active_classes || 0,
-            pendingRequests: data.metrics.pending_requests || 0,
-            avgProgress: data.metrics.avg_progress || 0,
+            totalStudents: metricsData.metrics.total_students || 0,
+            activeClasses: metricsData.metrics.active_classes || (metricsData.metrics.course_progress?.length || 0),
+            pendingRequests: metricsData.metrics.pending_requests || 0,
+            avgProgress: metricsData.metrics.avg_progress || 0,
+            completionRate: metricsData.metrics.completion_rate || 0,
+            activeStudents: metricsData.metrics.active_students || 0,
+            insights: metricsData.metrics.insights || [],
           })
         }
+        if (alertsData.success && alertsData.alerts) {
+          setAlerts(alertsData.alerts)
+        }
+        if (studentsData.success && studentsData.students) {
+          setStudents(studentsData.students)
+        }
       } catch (error) {
-        console.error("Error fetching teacher metrics", error)
+        console.error("Error fetching teacher data", error)
       } finally {
         setLoading(false)
       }
     }
-    fetchMetrics()
+    fetchData()
   }, [])
 
-  const alerts = [
-    {
-      id: 1,
-      student: "Maria Garcia",
-      type: "difficulty",
-      message: "Dificultades con bucles for",
-      time: "Hace 2 horas",
-    },
-    {
-      id: 2,
-      student: "Carlos Lopez",
-      type: "inactive",
-      message: "Sin actividad por 5 dias",
-      time: "Hace 1 dia",
-    },
-    {
-      id: 3,
-      student: "Ana Martinez",
-      type: "difficulty",
-      message: "Errores frecuentes en condicionales",
-      time: "Hace 3 horas",
-    },
-  ]
+  const topStudents = [...students]
+    .sort((a, b) => b.progress - a.progress)
+    .slice(0, 3)
+    .map((s: any) => ({ name: s.full_name, points: 0, progress: s.progress }))
 
-  const topStudents = [
-    { name: "Juan Perez", points: 450, progress: 85 },
-    { name: "Sofia Ruiz", points: 420, progress: 78 },
-    { name: "Pedro Sanchez", points: 380, progress: 72 },
-  ]
+  const recentActivity = stats.insights.map((i: string) => ({
+    action: "Insight",
+    detail: i,
+    time: "Hoy"
+  }))
 
-  const recentActivity = [
-    { action: "Nuevo estudiante", detail: "Maria se unio a Python Basico", time: "Hace 1 hora" },
-    { action: "Ejercicio completado", detail: "15 estudiantes completaron Bucles", time: "Hace 3 horas" },
-    { action: "Reto finalizado", detail: "Reto semanal: Variables", time: "Ayer" },
-  ]
-
-  const commonErrors = [
-    { topic: "Bucles for", percentage: 35, trend: "up" },
-    { topic: "Condicionales", percentage: 28, trend: "down" },
-    { topic: "Variables", percentage: 15, trend: "stable" },
-  ]
+  const commonErrors = []
 
   if (loading) {
     return <div className="flex h-[400px] items-center justify-center">Cargando métricas...</div>
@@ -202,58 +191,66 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">
-              {alerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className="flex items-start gap-3 rounded-lg border bg-background p-3"
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-500/10">
-                    <AlertTriangle className="h-4 w-4 text-orange-500" />
+              {alerts.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No hay alertas generadas aún</p>
+              ) : (
+                alerts.slice(0, 5).map((alert: any) => (
+                  <div
+                    key={alert.id}
+                    className="flex items-start gap-3 rounded-lg border bg-background p-3"
+                  >
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                      alert.priority === "high" ? "bg-red-500/10" :
+                      alert.priority === "medium" ? "bg-orange-500/10" : "bg-yellow-500/10"
+                    }`}>
+                      <AlertTriangle className={`h-4 w-4 ${
+                        alert.priority === "high" ? "text-red-500" :
+                        alert.priority === "medium" ? "text-orange-500" : "text-yellow-500"
+                      }`} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{alert.student_name || alert.student || "Estudiante"}</p>
+                      <p className="text-sm text-muted-foreground">{alert.message}</p>
+                      {alert.recommendations && alert.recommendations.length > 0 && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Sugerencia: {alert.recommendations[0]}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{alert.student}</p>
-                    <p className="text-sm text-muted-foreground">{alert.message}</p>
-                    <p className="text-xs text-muted-foreground">{alert.time}</p>
-                  </div>
-                  <Button variant="outline" size="sm">
-                    Ver
-                  </Button>
-                </div>
-              ))}
+                ))
+              )}
             </CardContent>
           </Card>
 
-          {/* Common Errors */}
+          {/* Insights from AI */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-primary" />
-                Errores Comunes
+                Insights de IA
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {commonErrors.map((error, index) => (
-                <div key={index} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">{error.topic}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">{error.percentage}%</span>
-                      {error.trend === "up" ? (
-                        <TrendingUp className="h-4 w-4 text-destructive" />
-                      ) : error.trend === "down" ? (
-                        <TrendingDown className="h-4 w-4 text-accent" />
-                      ) : null}
-                    </div>
-                  </div>
-                  <Progress value={error.percentage} className="h-2" />
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="rounded-lg bg-primary/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{stats.completionRate}%</p>
+                  <p className="text-xs text-muted-foreground">Tasa de completitud</p>
+                </div>
+                <div className="rounded-lg bg-accent/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-accent">{stats.activeStudents}</p>
+                  <p className="text-xs text-muted-foreground">Estudiantes activos</p>
+                </div>
+              </div>
+              {stats.insights.map((insight, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm">
+                  <div className="mt-1 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                  <span className="text-muted-foreground">{insight}</span>
                 </div>
               ))}
-              <Button variant="outline" className="w-full" asChild>
-                <Link href="/dashboard/metrics">
-                  Ver metricas detalladas
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
+              {stats.insights.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No hay insights disponibles</p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -289,20 +286,22 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
             </CardContent>
           </Card>
 
-          {/* Recent Activity */}
+          {/* Student Progress */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Actividad Reciente</CardTitle>
+              <CardTitle className="text-base">Progreso de Estudiantes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {recentActivity.map((activity, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{activity.action}</p>
-                    <p className="text-xs text-muted-foreground">{activity.detail}</p>
-                    <p className="text-xs text-muted-foreground">{activity.time}</p>
+              {students.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No hay estudiantes aún</p>
+              )}
+              {students.slice(0, 5).map((s: any, i: number) => (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium truncate">{s.full_name}</span>
+                    <span className="text-muted-foreground">{s.progress}%</span>
                   </div>
+                  <Progress value={s.progress} className="h-1.5" />
                 </div>
               ))}
             </CardContent>

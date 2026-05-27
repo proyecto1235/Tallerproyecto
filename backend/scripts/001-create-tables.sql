@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT TRUE,
     teacher_request_status VARCHAR(50),
     avatar_url VARCHAR(500),
+    public_id VARCHAR(36) UNIQUE DEFAULT gen_random_uuid()::text,
+    bio TEXT,
     points INTEGER DEFAULT 0,
     streak_days INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id);
 
 -- ============================================
 -- Modules Table
@@ -141,7 +144,8 @@ CREATE TABLE IF NOT EXISTS exercise_attempts (
     passed BOOLEAN DEFAULT FALSE,
     score NUMERIC(5, 2),
     attempt_count INTEGER DEFAULT 1,
-    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, exercise_id, attempt_count)
 );
 
 CREATE INDEX IF NOT EXISTS idx_attempts_student_id ON exercise_attempts(student_id);
@@ -236,7 +240,7 @@ CREATE TABLE IF NOT EXISTS challenge_attempts (
     attempt_count INTEGER DEFAULT 1,
     submitted_code TEXT,
     submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(challenge_id, student_id)
+    UNIQUE(challenge_id, student_id, attempt_count)
 );
 
 CREATE INDEX IF NOT EXISTS idx_challenge_attempts_challenge ON challenge_attempts(challenge_id);
@@ -341,3 +345,22 @@ CREATE TABLE IF NOT EXISTS class_enrollments (
 
 CREATE INDEX IF NOT EXISTS idx_ce_student_id ON class_enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_ce_class_id ON class_enrollments(class_id);
+
+-- ============================================
+-- Class Exercise Attempts
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS class_exercise_attempts (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    class_exercise_id INTEGER NOT NULL REFERENCES class_exercises(id) ON DELETE CASCADE,
+    class_module_id INTEGER NOT NULL REFERENCES class_modules(id) ON DELETE CASCADE,
+    passed BOOLEAN DEFAULT FALSE,
+    score NUMERIC(5, 2),
+    attempt_count INTEGER DEFAULT 1,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, class_exercise_id, attempt_count)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cea_student ON class_exercise_attempts(student_id);
+CREATE INDEX IF NOT EXISTS idx_cea_exercise ON class_exercise_attempts(class_exercise_id);

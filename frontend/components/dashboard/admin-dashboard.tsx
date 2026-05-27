@@ -33,58 +33,81 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
     students: 0,
     teachers: 0,
     admins: 0,
+    totalModules: 0,
     pendingTeacherRequests: 0,
     pendingContent: 0,
+    pendingReviews: 0,
+    totalEnrollments: 0,
+    totalAchievements: 0,
+    totalExercises: 0,
   })
   const [loading, setLoading] = useState(true)
+  const [teacherRequests, setTeacherRequests] = useState<any[]>([])
+  const [auditLogs, setAuditLogs] = useState<any[]>([])
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/dashboard/admin", {
-          credentials: "include"
-        })
-        const data = await res.json()
-        if (data.success && data.stats) {
-          setStats(prev => ({
-            ...prev,
-            totalUsers: data.stats.totalUsers,
-            students: data.stats.activeStudents,
-            teachers: data.stats.activeTeachers,
-            totalModules: data.stats.totalModules
-          }))
+        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+        const [statsRes, auditRes] = await Promise.all([
+          fetch(`${api}/dashboard/admin`, { credentials: "include" }),
+          fetch(`${api}/admin/audit-logs?limit=5`, { credentials: "include" }),
+        ])
+        const statsData = await statsRes.json()
+        const auditData = await auditRes.json()
+
+        if (statsData.success && statsData.stats) {
+          setStats({
+            totalUsers: statsData.stats.totalUsers || 0,
+            students: statsData.stats.activeStudents || 0,
+            teachers: statsData.stats.activeTeachers || 0,
+            admins: statsData.stats.admins || 0,
+            totalModules: statsData.stats.totalModules || 0,
+            pendingTeacherRequests: statsData.stats.pendingTeachers || statsData.stats.pendingTeacherRequests || 0,
+            pendingContent: statsData.stats.pendingContent || 0,
+            pendingReviews: statsData.stats.pendingReviews || 0,
+            totalEnrollments: statsData.stats.totalEnrollments || 0,
+            totalAchievements: statsData.stats.totalAchievements || 0,
+            totalExercises: statsData.stats.totalExercises || 0,
+          })
         }
+        if (auditData.success && auditData.events) {
+          setAuditLogs(auditData.events.slice(0, 5))
+        }
+        // Fetch pending teacher requests
+        try {
+          const trRes = await fetch(`${api}/admin/teachers/pending`, { credentials: "include" })
+          const trData = await trRes.json()
+          if (trData.success && trData.requests) {
+            setTeacherRequests(
+              trData.requests.slice(0, 3).map((u: any) => ({
+                id: u.id,
+                name: u.name,
+                email: u.email,
+                date: u.date || "Reciente"
+              }))
+            )
+          }
+        } catch (_) {}
       } catch (error) {
-        console.error("Error fetching admin stats", error)
+        console.error("Error fetching admin data", error)
       } finally {
         setLoading(false)
       }
     }
-    fetchStats()
+    fetchData()
   }, [])
-  const teacherRequests = [
-    { id: 1, name: "Laura Fernandez", email: "laura@email.com", date: "Hace 2 dias" },
-    { id: 2, name: "Miguel Torres", email: "miguel@email.com", date: "Hace 3 dias" },
-    { id: 3, name: "Carmen Diaz", email: "carmen@email.com", date: "Hace 5 dias" },
-  ]
 
   const systemHealth = [
-    { name: "Base de datos", status: "healthy", latency: "12ms" },
-    { name: "Autenticacion", status: "healthy", latency: "45ms" },
-    { name: "API Principal", status: "healthy", latency: "23ms" },
+    { name: "Base de datos", status: "healthy", latency: `${stats.totalUsers} usuarios` },
+    { name: "Autenticación", status: "healthy", latency: `${stats.totalEnrollments} matrículas` },
+    { name: "Contenido", status: "healthy", latency: `${stats.totalModules} módulos` },
   ]
 
-  const recentAudit = [
-    { action: "Usuario creado", user: "maria@email.com", time: "Hace 1 hora" },
-    { action: "Docente aprobado", user: "pedro@email.com", time: "Hace 3 horas" },
-    { action: "Contenido aprobado", user: "admin", time: "Hace 5 horas" },
-    { action: "Configuracion actualizada", user: "admin", time: "Ayer" },
-  ]
-
-  const pendingContent = [
-    { id: 1, title: "Ejercicio: Bucles anidados", type: "Ejercicio", author: "Prof. Garcia" },
-    { id: 2, title: "Leccion: Funciones recursivas", type: "Leccion", author: "IA" },
-  ]
+  const pendingContent = []
+  if (stats.pendingReviews > 0) {
+    pendingContent.push({ id: 1, title: "Contenido pendiente de revisión", type: "Revisión", author: "Docentes" })
+  }
 
   if (loading) {
     return <div className="flex h-[400px] items-center justify-center">Cargando panel de administración...</div>
@@ -273,50 +296,51 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Shield className="h-5 w-5 text-primary" />
-                Auditoria Reciente
+                Auditoría Reciente
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {recentAudit.map((entry, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{entry.action}</p>
-                    <p className="text-xs text-muted-foreground">{entry.user}</p>
-                    <p className="text-xs text-muted-foreground">{entry.time}</p>
+              {auditLogs.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No hay eventos de auditoría</p>
+              ) : (
+                auditLogs.map((entry: any, index: number) => (
+                  <div key={index} className="flex items-start gap-3">
+                    <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{entry.event_type || entry.action || "Evento"}</p>
+                      <p className="text-xs text-muted-foreground">{entry.email || entry.user_id || ""}</p>
+                      <p className="text-xs text-muted-foreground">{entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : ""}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-              <Button variant="ghost" size="sm" className="w-full" asChild>
-                <Link href="/dashboard/audit">Ver historial completo</Link>
-              </Button>
+                ))
+              )}
             </CardContent>
           </Card>
 
-          {/* Quick Stats */}
+          {/* Platform Stats */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <TrendingUp className="h-5 w-5 text-primary" />
-                Esta Semana
+                Plataforma
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Nuevos usuarios</span>
-                <span className="text-sm font-medium text-foreground">+12</span>
+                <span className="text-sm text-muted-foreground">Módulos</span>
+                <span className="text-sm font-medium text-foreground">{stats.totalModules}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Lecciones completadas</span>
-                <span className="text-sm font-medium text-foreground">234</span>
+                <span className="text-sm text-muted-foreground">Matrículas activas</span>
+                <span className="text-sm font-medium text-foreground">{stats.totalEnrollments}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Ejercicios resueltos</span>
-                <span className="text-sm font-medium text-foreground">567</span>
+                <span className="text-sm text-muted-foreground">Ejercicios</span>
+                <span className="text-sm font-medium text-foreground">{stats.totalExercises}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Tiempo promedio</span>
-                <span className="text-sm font-medium text-foreground">25 min/dia</span>
+                <span className="text-sm text-muted-foreground">Logros</span>
+                <span className="text-sm font-medium text-foreground">{stats.totalAchievements}</span>
               </div>
             </CardContent>
           </Card>

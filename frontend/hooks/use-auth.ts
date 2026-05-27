@@ -11,6 +11,8 @@ export interface User {
   points?: number
   streakDays?: number
   avatarUrl?: string | null
+  publicId?: string | null
+  teacherRequestStatus?: string | null
 }
 
 interface AuthState {
@@ -34,6 +36,8 @@ function mapBackendUserToFrontend(backendData: any): User {
     points: backendData.points || 0,
     streakDays: backendData.streak_days || backendData.streakDays || 0,
     avatarUrl: backendData.avatar_url || backendData.avatarUrl || null,
+    publicId: backendData.public_id || backendData.publicId || null,
+    teacherRequestStatus: backendData.teacher_request_status || backendData.teacherRequestStatus || null,
   }
 }
 
@@ -47,6 +51,7 @@ const MOCK_USER: User = {
   role: "student",
   points: 1500,
   streakDays: 5,
+  publicId: "mock-public-id",
 }
 
 import { clearAuthCookies } from "@/app/actions/auth"
@@ -113,15 +118,8 @@ export function useAuth() {
       } else {
         console.warn("Backend inactivo, usando fallback local de Registro.")
 
-        const fallbackUser = { ...MOCK_USER, email, fullName, role: "student" } as User
+        const fallbackUser = { ...MOCK_USER, role: "student" } as User
         localStorage.setItem("mock_session", JSON.stringify(fallbackUser))
-
-        if (requestTeacher) {
-          // Store a pending teacher request in localStorage for admin to see
-          const pending = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
-          pending.push({ id: Date.now(), name: fullName, email, date: new Date().toISOString(), status: "pending" })
-          localStorage.setItem("robolearn_teacher_pending", JSON.stringify(pending))
-        }
 
         setState({
           user: fallbackUser,
@@ -237,6 +235,13 @@ export function useAuth() {
       
       const fallbackUser = { ...MOCK_USER, email, fullName, role: requestTeacher ? "teacher" : "student" } as User
       localStorage.setItem("mock_session", JSON.stringify(fallbackUser))
+      
+      if (requestTeacher) {
+        // Store a pending teacher request in localStorage for admin to see
+        const pending = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
+        pending.push({ id: Date.now(), name: fullName, email, date: new Date().toISOString(), status: "pending" })
+        localStorage.setItem("robolearn_teacher_pending", JSON.stringify(pending))
+      }
       
       setState({
         user: fallbackUser,

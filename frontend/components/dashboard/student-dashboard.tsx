@@ -14,10 +14,12 @@ import {
   CheckCircle,
   Clock,
   Zap,
+  User,
 } from "lucide-react"
 import Link from "next/link"
 import { InteractiveExercise } from "@/components/interactive/InteractiveExercise"
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import {
   BarChart,
   Bar,
@@ -36,18 +38,29 @@ interface StudentDashboardProps {
 }
 
 export function StudentDashboard({ user }: StudentDashboardProps) {
+  const router = useRouter()
   const [dashboardData, setDashboardData] = useState<any>(null)
+  const [enrolledClasses, setEnrolledClasses] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/dashboard/student`, {
-          credentials: "include"
-        })
-        const data = await res.json()
-        if (data.success) {
-          setDashboardData(data.dashboard)
+        const [dashRes, enrollRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/dashboard/student`, {
+            credentials: "include"
+          }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/classes/enrolled`, {
+            credentials: "include"
+          }),
+        ])
+        const dashData = await dashRes.json()
+        if (dashData.success) {
+          setDashboardData(dashData.dashboard)
+        }
+        const enrollData = await enrollRes.json()
+        if (enrollData.success) {
+          setEnrolledClasses((enrollData.classes || []).filter((c: any) => c.enrollment_status === "approved"))
         }
       } catch (e) {
         console.error("Error fetching student dashboard:", e)
@@ -111,17 +124,65 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
           </h1>
           <p className="text-muted-foreground">Continua tu aventura de aprendizaje</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-3 py-2">
-            <Star className="h-5 w-5 text-yellow-500" />
-            <span className="font-semibold text-yellow-600">{dbPoints} pts</span>
+
+        {user?.teacherRequestStatus === "pending" && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 mb-4 sm:mb-0">
+            <p className="text-sm text-amber-600 font-medium">
+              Solicitud de docente pendiente — un administrador revisará tu cuenta pronto.
+            </p>
           </div>
-          <div className="flex items-center gap-2 rounded-lg bg-orange-500/10 px-3 py-2">
-            <Flame className="h-5 w-5 text-orange-500" />
-            <span className="font-semibold text-orange-600">{dbStreak} dias</span>
+        )}
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-3 py-2">
+              <Star className="h-5 w-5 text-yellow-500" />
+              <span className="font-semibold text-yellow-600">{dbPoints} pts</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg bg-orange-500/10 px-3 py-2">
+              <Flame className="h-5 w-5 text-orange-500" />
+              <span className="font-semibold text-orange-600">{dbStreak} dias</span>
+            </div>
+            <Button variant="outline" size="sm" className="hidden sm:flex" onClick={() => router.push(`/dashboard/profile/${user.publicId || user.id}`)}>
+              <User className="h-4 w-4 mr-1" /> Ver Perfil
+            </Button>
           </div>
-        </div>
       </div>
+
+      {/* Mis Cursos widget */}
+      {enrolledClasses.length > 0 && (
+        <Card className="border-primary/20 bg-card/80 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              Mis Cursos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {enrolledClasses.slice(0, 6).map((cls) => (
+                <Link
+                  key={cls.id}
+                  href={`/dashboard/classes/${cls.id}`}
+                  className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 group cursor-pointer"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
+                    {cls.title?.charAt(0)?.toUpperCase() || "C"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{cls.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">{cls.category || "Clase"}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            {enrolledClasses.length > 6 && (
+              <Button variant="link" size="sm" className="mt-2" asChild>
+                <Link href="/dashboard/classes">Ver todas las clases</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

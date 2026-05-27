@@ -10,7 +10,7 @@ import {
 } from "recharts"
 import {
   Loader2, AlertTriangle, TrendingUp, Brain, Users,
-  Target, Zap, Clock, AlertCircle, UserX, Star,
+  Target, Zap, Clock, AlertCircle, UserX, Star, ThumbsUp, ThumbsDown,
 } from "lucide-react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
@@ -21,16 +21,18 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<any>(null)
   const [students, setStudents] = useState<any[]>([])
   const [summary, setSummary] = useState<any>(null)
+  const [difficultyAnalysis, setDifficultyAnalysis] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/dashboard?days=30`, {
-          credentials: "include",
-        })
-        const json = await res.json()
+        const [dashRes, diffRes] = await Promise.all([
+          fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" }),
+          fetch(`${API_URL}/exercises/difficulty-analysis`, { credentials: "include" }),
+        ])
+        const json = await dashRes.json()
         if (json.success) {
           const cp = json.class_predictions || {}
           setData(json)
@@ -38,6 +40,10 @@ export default function AnalyticsPage() {
           setSummary(cp.summary || {})
         } else {
           setErrorMsg(json.error || "Error al cargar")
+        }
+        const diffJson = await diffRes.json()
+        if (diffJson.success) {
+          setDifficultyAnalysis(diffJson.suggestions || [])
         }
       } catch (err: any) {
         setErrorMsg(err.message || "Error de conexión")
@@ -147,6 +153,7 @@ export default function AnalyticsPage() {
           <TabsTrigger value="students">Estudiantes</TabsTrigger>
           <TabsTrigger value="distribution">Distribución</TabsTrigger>
           <TabsTrigger value="activity">Actividad</TabsTrigger>
+          <TabsTrigger value="difficulty">Dificultad</TabsTrigger>
         </TabsList>
 
         <TabsContent value="students" className="space-y-4">
@@ -316,6 +323,61 @@ export default function AnalyticsPage() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="difficulty">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  Análisis de Dificultad de Ejercicios
+                </CardTitle>
+                <CardDescription>Sugerencias basadas en tasas de acierto de estudiantes</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {difficultyAnalysis.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>Aún no hay suficientes datos para analizar la dificultad de los ejercicios.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {difficultyAnalysis.map((s: any) => (
+                      <Card key={s.exercise_id} className={`border-l-4 ${s.type === "too_hard" ? "border-l-red-500" : s.type === "too_easy" ? "border-l-green-500" : "border-l-amber-500"}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold text-sm">{s.title}</h4>
+                                <span className="text-xs text-muted-foreground">— {s.module_title}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
+                                <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{s.total_attempts} intentos</span>
+                                <span className="flex items-center gap-1"><Users className="w-3 h-3" />{s.unique_students} estudiantes</span>
+                                <span className="flex items-center gap-1">
+                                  {s.pass_rate >= 85 ? <ThumbsUp className="w-3 h-3 text-green-500" /> : s.pass_rate < 30 ? <ThumbsDown className="w-3 h-3 text-red-500" /> : <Clock className="w-3 h-3" />}
+                                  {s.pass_rate}% acierto
+                                </span>
+                              </div>
+                              <p className="text-sm">{s.message}</p>
+                              {s.alternative && (
+                                <p className="text-xs text-muted-foreground mt-1 italic">{s.alternative}</p>
+                              )}
+                            </div>
+                            <div className="shrink-0">
+                              <Badge variant={s.type === "too_hard" ? "destructive" : s.type === "too_easy" ? "secondary" : "outline"}>
+                                {s.type === "too_hard" ? "Muy difícil" : s.type === "too_easy" ? "Muy fácil" : "Revisar"}
+                              </Badge>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

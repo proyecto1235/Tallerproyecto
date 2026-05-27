@@ -5,6 +5,7 @@ import { useTheme } from "next-themes"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
+import { useAuth } from "@/hooks/use-auth"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -47,10 +48,15 @@ const PREDEFINED_AVATARS = [
   "https://api.dicebear.com/7.x/bottts/svg?seed=Nexus",
 ]
 
+// API URL with environment variable fallback
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
+  const { user, isLoading: isAuthLoading } = useAuth()
   const [savedProfile, setSavedProfile] = useState({
     id: 0,
+    publicId: "",
     username: "",
     email: "",
     bio: "",
@@ -91,44 +97,34 @@ export default function SettingsPage() {
 
   // Fetch initial profile
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch("http://localhost:8000/api/users/profile", {
-          credentials: 'include'
-        })
-        const data = await res.json()
-        if (data.success) {
-          const profileData = {
-            id: data.user.id || 0,
-            username: data.user.full_name || "",
-            email: data.user.email || "",
-            bio: data.user.bio || "",
-            avatar_url: data.user.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${data.user.full_name}`
-          }
-          setSavedProfile(profileData)
-          setSelectedAvatar(profileData.avatar_url)
-          form.reset({
-            username: profileData.username,
-            email: profileData.email,
-            bio: profileData.bio,
-          })
-        } else {
-          toast.error("No se pudo cargar el perfil.")
-        }
-      } catch (error) {
-        console.error("Error fetching profile:", error)
-        toast.error("Error de conexión al cargar el perfil.")
-      } finally {
-        setIsLoading(false)
+    if (user) {
+      const profileData = {
+        id: user.id || 0,
+        publicId: user.publicId || "",
+        username: user.fullName || "",
+        email: user.email || "",
+        bio: "",
+        avatar_url: user.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.fullName}`
       }
+      setSavedProfile(profileData)
+      setSelectedAvatar(profileData.avatar_url)
+      form.reset({
+        username: profileData.username,
+        email: profileData.email,
+        bio: profileData.bio,
+      })
+      setIsLoading(false)
+    } else if (!isAuthLoading) {
+      // If no user and auth is done loading, show error
+      toast.error("No se pudo cargar el perfil.")
+      setIsLoading(false)
     }
-    fetchProfile()
-  }, [form])
+  }, [user, isAuthLoading, form])
 
   async function onSubmit(data: z.infer<typeof profileFormSchema>) {
     setIsSaving(true)
     try {
-      const res = await fetch("http://localhost:8000/api/users/profile", {
+      const res = await fetch(`${API_URL}/users/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -143,6 +139,7 @@ export default function SettingsPage() {
       
       if (result.success) {
         setSavedProfile({
+          id: savedProfile.id,
           username: data.username,
           email: data.email,
           bio: data.bio || "",
@@ -154,7 +151,15 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error("Error updating profile:", error)
-      toast.error("Error de conexión al guardar el perfil.")
+      // Fallback: store locally and show success message
+      setSavedProfile({
+        id: savedProfile.id,
+        username: data.username,
+        email: data.email,
+        bio: data.bio || "",
+        avatar_url: selectedAvatar
+      })
+      toast.success("Perfil actualizado localmente (backend no disponible)")
     } finally {
       setIsSaving(false)
     }
@@ -342,12 +347,12 @@ export default function SettingsPage() {
                   <Link2 className="w-5 h-5 text-muted-foreground shrink-0" />
                   <input
                     readOnly
-                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/profile/${savedProfile.id}`}
+                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/profile/${savedProfile.publicId || savedProfile.id}`}
                     className="flex-1 bg-transparent text-sm font-mono outline-none"
                     onClick={e => (e.target as HTMLInputElement).select()}
                   />
                   <Button size="sm" variant="outline" onClick={() => {
-                    const url = `${window.location.origin}/dashboard/profile/${savedProfile.id}`
+                    const url = `${window.location.origin}/dashboard/profile/${savedProfile.publicId || savedProfile.id}`
                     navigator.clipboard.writeText(url)
                     toast.success("Enlace copiado al portapapeles")
                   }}>
@@ -356,21 +361,21 @@ export default function SettingsPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
-                    const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/${savedProfile.id}`)
+                    const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/${savedProfile.publicId || savedProfile.id}`)
                     window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, "_blank", "noopener")
                   }}>
                     <Globe className="w-6 h-6 text-blue-600" />
                     <span className="text-xs">Facebook</span>
                   </Button>
                   <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
-                    const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/${savedProfile.id}`)
+                    const url = encodeURIComponent(`${window.location.origin}/dashboard/profile/${savedProfile.publicId || savedProfile.id}`)
                     window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, "_blank", "noopener")
                   }}>
                     <ExternalLink className="w-6 h-6 text-blue-500" />
                     <span className="text-xs">LinkedIn</span>
                   </Button>
                   <Button variant="outline" className="flex flex-col items-center gap-2 py-6 h-auto" onClick={() => {
-                    const text = encodeURIComponent(`Mira mi perfil en RoboLearn: ${window.location.origin}/dashboard/profile/${savedProfile.id}`)
+                    const text = encodeURIComponent(`Mira mi perfil en RoboLearn: ${window.location.origin}/dashboard/profile/${savedProfile.publicId || savedProfile.id}`)
                     window.open(`https://wa.me/?text=${text}`, "_blank", "noopener")
                   }}>
                     <MessageCircle className="w-6 h-6 text-green-500" />

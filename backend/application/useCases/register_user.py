@@ -1,4 +1,4 @@
-from domain.entities.user import User, UserRole
+from domain.entities.user import User, UserRole, TeacherRequestStatus
 from domain.ports.user_repository import UserRepository
 from passlib.context import CryptContext
 
@@ -34,13 +34,23 @@ class RegisterUserUseCase:
         password_hash = pwd_context.hash(password)
         
         # Create user entity
-        user = User(
-            id=None,
-            email=email,
-            password_hash=password_hash,
-            full_name=full_name,
-            role=UserRole.TEACHER if request_teacher else UserRole.STUDENT,
-        )
+        if request_teacher:
+            user = User(
+                id=None,
+                email=email,
+                password_hash=password_hash,
+                full_name=full_name,
+                role=UserRole.STUDENT,
+                teacher_request_status=TeacherRequestStatus.PENDING,
+            )
+        else:
+            user = User(
+                id=None,
+                email=email,
+                password_hash=password_hash,
+                full_name=full_name,
+                role=UserRole.STUDENT,
+            )
         
         # Save to repository
         created_user = await self.user_repository.create(user)
@@ -52,6 +62,7 @@ class RegisterUserUseCase:
                 "email": created_user.email,
                 "full_name": created_user.full_name,
                 "role": created_user.role.value,
+                "public_id": created_user.public_id,
             },
             "teacher_request_pending": request_teacher,
         }

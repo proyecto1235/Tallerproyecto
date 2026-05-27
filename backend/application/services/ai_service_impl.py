@@ -165,6 +165,27 @@ class AIServiceImpl(AIService):
             }
     
     @staticmethod
+    def is_fallback_response(text: str) -> bool:
+        """Detect if Dialogflow returned a generic 'I don't know' response"""
+        if not text:
+            return True
+        text_lower = text.lower()
+        fallback_patterns = [
+            "lo siento", "no entend", "no entiend", "no puedo responder",
+            "no puedo ayudarte", "no estoy seguro", "no sé cómo",
+            "no tengo información", "no tengo una respuesta",
+            "no estoy programado", "no puedo contestar",
+            "no comprendo", "no te entiendo", "no sé qué",
+            "no tengo datos", "no tengo conocimiento",
+            "no encuentro", "no reconozco", "no estoy entrenado",
+            "no tengo una respuesta para eso", "no tengo una respuesta a eso",
+            "consulta a tu profesor", "pregunta a tu profesor",
+            "no estoy diseñado", "esa pregunta no",
+            "no puedo con", "no sé decirte",
+        ]
+        return any(p in text_lower for p in fallback_patterns)
+
+    @staticmethod
     def _extract_features(user_history: List[Dict[str, Any]]) -> List[float]:
         """Extract features from user history for ML"""
         if not user_history:

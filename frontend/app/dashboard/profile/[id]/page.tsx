@@ -7,8 +7,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Loader2, Copy, Check, Trophy, BookOpen, Star, Flame, Link as LinkIcon } from "lucide-react"
+import { Loader2, Copy, Check, Trophy, BookOpen, Star, Flame, GraduationCap, Presentation, Target } from "lucide-react"
 import { toast } from "sonner"
+import Link from "next/link"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
@@ -34,23 +35,42 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchProfile = async () => {
       setLoading(true)
-      let userId = (params.id as string).trim()
+      let identifier = (params.id as string).trim()
 
-      // Check if it's a numeric ID
-      const numericId = parseInt(userId, 10)
-      if (!isNaN(numericId)) {
+      const numericId = parseInt(identifier, 10)
+
+      // Try as public_id (UUID) first
+      if (!isNaN(numericId) || identifier.includes("-")) {
         try {
-          const res = await fetch(`${API_URL}/users/${numericId}`, { credentials: "include" })
+          const endpoint = identifier.includes("-")
+            ? `${API_URL}/users/by-public-id/${identifier}`
+            : `${API_URL}/users/${numericId}`
+          const res = await fetch(endpoint, { credentials: "include" })
           const data = await res.json()
           if (data.success) {
             const u = data.user
-            // Fetch achievements and classes separately
             let achievements: any[] = []
             try {
-              const achRes = await fetch(`${API_URL}/achievements?user_id=${numericId}`, { credentials: "include" })
+              const achRes = await fetch(`${API_URL}/achievements?user_id=${u.id}`, { credentials: "include" })
               const achData = await achRes.json()
               if (achData.success) achievements = achData.achievements || []
             } catch (_) {}
+
+            let enrolledClasses: any[] = []
+            try {
+              const clsRes = await fetch(`${API_URL}/classes/enrolled`, { credentials: "include" })
+              const clsData = await clsRes.json()
+              if (clsData.success) {
+                enrolledClasses = (clsData.classes || [])
+                  .filter((c: any) => c.enrollment_status === "approved")
+                  .map((c: any) => ({
+                    id: c.id,
+                    title: c.title,
+                    progress: c.progress || 0
+                  }))
+              }
+            } catch (_) {}
+
             setProfile({
               full_name: u.full_name,
               email: u.email,
@@ -60,7 +80,7 @@ export default function ProfilePage() {
               points: u.points || 0,
               streak_days: u.streak_days || 0,
               achievements,
-              classes: []
+              classes: enrolledClasses
             })
             setLoading(false)
             return
@@ -68,13 +88,17 @@ export default function ProfilePage() {
         } catch (_) {}
       }
 
-      // Try searching by name
+      // Fallback: try searching by name
       try {
-        const res = await fetch(`${API_URL}/users/search?q=${encodeURIComponent(userId)}`, { credentials: "include" })
+        const res = await fetch(`${API_URL}/users/search?q=${encodeURIComponent(identifier)}`, { credentials: "include" })
         const data = await res.json()
         if (data.success && data.users.length > 0) {
           const found = data.users[0]
-          router.replace(`/dashboard/profile/${found.id}`)
+          if (found.public_id) {
+            router.replace(`/dashboard/profile/${found.public_id}`)
+          } else {
+            router.replace(`/dashboard/profile/${found.id}`)
+          }
           return
         }
       } catch (_) {}
@@ -104,9 +128,13 @@ export default function ProfilePage() {
   }
 
   const initials = profile.full_name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+  const isStudent = profile.role === "student"
+  const isTeacher = profile.role === "teacher"
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
+
+      {/* Header Section */}
       <Card className="border-primary/20">
         <CardContent className="p-6 md:p-8">
           <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
@@ -118,10 +146,9 @@ export default function ProfilePage() {
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold">{profile.full_name}</h1>
                 <Badge variant="secondary" className="mt-1">
-                  {profile.role === "admin" ? "Administrador" : profile.role === "teacher" ? "Docente" : "Estudiante"}
+                  {isTeacher ? "Docente" : isStudent ? "Estudiante" : "Administrador"}
                 </Badge>
               </div>
-              {profile.bio && <p className="text-muted-foreground">{profile.bio}</p>}
               <div className="flex items-center justify-center md:justify-start gap-4 text-sm">
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-yellow-500" />
@@ -141,6 +168,86 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Presentation / Bio Section */}
+      <Card className="border-primary/10">
+        <CardContent className="p-6">
+          {isStudent && (
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                <Target className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Sobre mí</h3>
+                <p className="text-muted-foreground">
+                  {profile.bio || `Estudiante apasionado por la programación. Actualmente con ${profile.points} puntos y una racha de ${profile.streak_days} días.`}
+                </p>
+              </div>
+            </div>
+          )}
+          {isTeacher && profile.bio && (
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                <Presentation className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Biografía</h3>
+                <p className="text-muted-foreground whitespace-pre-wrap">{profile.bio}</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Student: Active Courses */}
+      {isStudent && profile.classes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-primary" />
+              Cursos Activos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {profile.classes.map((cls) => (
+              <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
+                   onClick={() => router.push(`/dashboard/classes/${cls.id}`)}>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/10 text-green-500">
+                    <GraduationCap className="w-5 h-5" />
+                  </div>
+                  <span className="font-medium">{cls.title}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">{cls.progress}%</span>
+                  <Progress value={cls.progress} className="w-20 h-2" />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Teacher: Courses they teach */}
+      {isTeacher && profile.classes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-primary" />
+              Clases que Imparte
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {profile.classes.map((cls) => (
+              <div key={cls.id} className="flex items-center gap-3 p-3 rounded-lg border">
+                <BookOpen className="w-5 h-5 text-primary shrink-0" />
+                <span className="font-medium">{cls.title}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Achievements */}
       {profile.achievements.length > 0 && (
         <Card>
           <CardHeader>
@@ -152,37 +259,12 @@ export default function ProfilePage() {
           <CardContent>
             <div className="flex flex-wrap gap-3">
               {profile.achievements.map((a) => (
-                <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted">
+                <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-yellow-500/20">
                   <span className="text-lg">{a.icon}</span>
                   <span className="text-sm font-medium">{a.name}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {profile.classes.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-primary" />
-              Clases Inscritas
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {profile.classes.map((cls) => (
-              <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border">
-                <div className="flex items-center gap-3">
-                  <LinkIcon className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium">{cls.title}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground">{cls.progress}%</span>
-                  <Progress value={cls.progress} className="w-20 h-2" />
-                </div>
-              </div>
-            ))}
           </CardContent>
         </Card>
       )}

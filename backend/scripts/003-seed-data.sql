@@ -6,20 +6,20 @@
 -- ============================================
 
 -- Users
-INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days)
-VALUES ('admin@robolearn.com', '$2b$12$bGM8zs/InGnD1y8CjoqEgOdxJFEhAjfib2/jZckpnA3p0mhd/fpiW', 'Admin User', 'admin', TRUE, 0, 0)
+INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days, public_id, bio)
+VALUES ('admin@robolearn.com', '$2b$12$bGM8zs/InGnD1y8CjoqEgOdxJFEhAjfib2/jZckpnA3p0mhd/fpiW', 'Admin User', 'admin', TRUE, 0, 0, gen_random_uuid()::text, 'Administrador de la plataforma RoboLearn.')
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days)
-VALUES ('teacher@robolearn.com', '$2b$12$JFpw/eFD6s9cDikL1TJsYeExzr.85GpQUS1rvEqnEvJVJ4w/ZMOsC', 'Professor García', 'teacher', TRUE, 500, 15)
+INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days, public_id, bio)
+VALUES ('teacher@robolearn.com', '$2b$12$JFpw/eFD6s9cDikL1TJsYeExzr.85GpQUS1rvEqnEvJVJ4w/ZMOsC', 'Professor García', 'teacher', TRUE, 500, 15, gen_random_uuid()::text, 'Docente de programación con 10 años de experiencia.')
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days)
-VALUES ('student1@robolearn.com', '$2b$12$2nB0IaMwEsneWumF2ooVcehZfVCZJutDcQr58zLIfMAD/WgM17x8i', 'Juan Pérez', 'student', TRUE, 250, 5)
+INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days, public_id, bio)
+VALUES ('student1@robolearn.com', '$2b$12$2nB0IaMwEsneWumF2ooVcehZfVCZJutDcQr58zLIfMAD/WgM17x8i', 'Juan Pérez', 'student', TRUE, 250, 5, gen_random_uuid()::text, 'Estudiante de primer año aprendiendo Python.')
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days)
-VALUES ('student2@robolearn.com', '$2b$12$2nB0IaMwEsneWumF2ooVcehZfVCZJutDcQr58zLIfMAD/WgM17x8i', 'María López', 'student', TRUE, 420, 8)
+INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days, public_id, bio)
+VALUES ('student2@robolearn.com', '$2b$12$2nB0IaMwEsneWumF2ooVcehZfVCZJutDcQr58zLIfMAD/WgM17x8i', 'María López', 'student', TRUE, 420, 8, gen_random_uuid()::text, 'Apasionada por la tecnología y el análisis de datos.')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO users (email, password_hash, full_name, role, is_active, points, streak_days)

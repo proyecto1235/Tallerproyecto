@@ -37,7 +37,10 @@ export default function ExercisesPage() {
         if (data.success && data.exercises && data.exercises.length > 0) {
           const mapped = data.exercises.map((e: any) => ({
             ...e,
-            _id: e.id?.toString() || `ex-${Math.random()}`
+            _id: e.id?.toString() || `ex-${Math.random()}`,
+            instructions: (e.instructions || "").replace(/\\n/g, "\n"),
+            description: (e.description || "").replace(/\\n/g, "\n"),
+            solution_output: (e.solution_output || "").replace(/\\n/g, "\n")
           }))
           setExercises(mapped)
           setSelectedExercise(mapped[0])
@@ -180,9 +183,22 @@ export default function ExercisesPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-6 flex-1 overflow-y-auto">
-              <div className="prose dark:prose-invert prose-sm">
-                <p className="text-base leading-relaxed whitespace-pre-wrap">{selectedExercise?.description}</p>
-                <div className="mt-8 border-t border-border/50 pt-4">
+              <div className="prose dark:prose-invert prose-sm space-y-4">
+
+                <div className="bg-primary/5 rounded-lg p-4 border border-primary/10">
+                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-2">Objetivo</h4>
+                  <p className="text-base leading-relaxed whitespace-pre-wrap">{selectedExercise?.description}</p>
+                </div>
+
+                <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
+                  <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Código Inicial</h4>
+                  <pre className="text-sm font-mono whitespace-pre-wrap bg-background/80 p-3 rounded border border-border/50 overflow-x-auto">
+                    {(selectedExercise?.instructions || "# Escribe tu código aquí").split("\n").slice(0, 6).join("\n")}
+                    {(selectedExercise?.instructions || "").split("\n").length > 6 ? "\n..." : ""}
+                  </pre>
+                </div>
+
+                <div className="border-t border-border/50 pt-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-yellow-500"></span>

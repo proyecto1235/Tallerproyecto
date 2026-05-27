@@ -1,6 +1,7 @@
 from typing import List, Optional
 from enum import Enum
 from datetime import datetime
+import uuid
 
 class UserRole(str, Enum):
     STUDENT = "student"
@@ -24,6 +25,9 @@ class User:
         teacher_request_status: Optional[TeacherRequestStatus] = None,
         avatar_url: Optional[str] = None,
         bio: Optional[str] = None,
+        public_id: Optional[str] = None,
+        points: int = 0,
+        streak_days: int = 0,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
     ):
@@ -36,6 +40,9 @@ class User:
         self.teacher_request_status = teacher_request_status
         self.avatar_url = avatar_url
         self.bio = bio
+        self.public_id = public_id or str(uuid.uuid4())
+        self.points = points
+        self.streak_days = streak_days
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 
@@ -49,6 +56,10 @@ class User:
             "teacher_request_status": self.teacher_request_status.value if self.teacher_request_status else None,
             "avatar_url": self.avatar_url,
             "bio": self.bio,
+            "public_id": self.public_id,
+            "points": self.points,
+            "streak_days": self.streak_days,
+            "password_hash": self.password_hash,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Loader2, ArrowLeft, BookOpen, CheckCircle2, Lock, ChevronRight, FileText, Users, Clock, AlertTriangle } from "lucide-react"
+import { Loader2, ArrowLeft, BookOpen, CheckCircle2, ChevronRight, FileText, Users, Clock, AlertTriangle } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
@@ -61,21 +61,25 @@ export default function ClassDetailsPage() {
         setErrorMsg("Clase no encontrada")
       }
     } catch (_) {
-      const saved = localStorage.getItem("robolearn_teacher_classes")
-      if (saved) {
-        const all = JSON.parse(saved)
-        const found = all.find((c: any) => c.id === params.id)
-        if (found) {
-          setClassData(found)
-          setModules((found.modules || []).map((m: any, i: number) => ({
-            ...m,
-            exercise_count: m.exercises?.length || 0,
-            order: m.order || i + 1
-          })))
-        } else {
-          setErrorMsg("Clase no encontrada")
+      try {
+        const saved = localStorage.getItem("robolearn_classes")
+        if (saved) {
+          const all = JSON.parse(saved)
+          if (Array.isArray(all)) {
+            const found = all.find((c: any) => c.id === classId)
+            if (found) {
+              setClassData(found)
+              setModules((found.modules || []).map((m: any, i: number) => ({
+                ...m,
+                exercise_count: m.exercises?.length || 0,
+                order: m.order || i + 1
+              })))
+            } else {
+              setErrorMsg("Clase no encontrada")
+            }
+          }
         }
-      }
+      } catch (_) {}
     }
     setIsLoading(false)
   }
@@ -124,7 +128,7 @@ export default function ClassDetailsPage() {
           <CardContent className="flex flex-col items-center py-12 gap-4">
             <AlertTriangle className="w-12 h-12 text-amber-500" />
             <h2 className="text-xl font-bold text-center">{errorMsg}</h2>
-            {enrollmentStatus === null && (
+            {(enrollmentStatus === null || enrollmentStatus === "rejected") && (
               <Button onClick={handleEnroll} disabled={requesting} size="lg">
                 {requesting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                 Solicitar Matrícula
@@ -183,8 +187,8 @@ export default function ClassDetailsPage() {
                       <p className="text-xs text-muted-foreground">{mod.exercise_count} ejercicios</p>
                     </div>
                   </div>
-                  <Button size="sm" disabled>
-                    <Lock className="w-4 h-4 mr-1" /> Próximamente
+                  <Button size="sm" onClick={() => router.push(`/dashboard/classes/${classId}/module/${mod.id}`)}>
+                    <BookOpen className="w-4 h-4 mr-1" /> Ver contenido
                   </Button>
                 </CardContent>
               </Card>

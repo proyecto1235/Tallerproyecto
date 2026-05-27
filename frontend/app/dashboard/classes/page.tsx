@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,8 @@ export default function ClassesPage() {
   const [enrolledClasses, setEnrolledClasses] = useState<any[]>([])
   const [pendingRequests, setPendingRequests] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [requestingId, setRequestingId] = useState<number | null>(null)
+  const requestingRef = useRef<number | null>(null)
 
   useEffect(() => {
     loadData()
@@ -42,27 +44,27 @@ export default function ClassesPage() {
       }
     } catch (_) {
       // Fallback to localStorage
-      const saved = localStorage.getItem("robolearn_teacher_classes")
-      if (saved) {
-        const all = JSON.parse(saved).filter((c: any) => c.is_published)
-        setAvailableClasses(all)
-      }
+      try {
+        const saved = localStorage.getItem("robolearn_classes")
+        if (saved) {
+          const all = JSON.parse(saved)
+          if (Array.isArray(all)) {
+            setAvailableClasses(all.filter((c: any) => c.is_published))
+          }
+        }
+      } catch (_) {}
     }
     setIsLoading(false)
   }
 
   const isEnrolled = (classId: number) => enrolledClasses.some(c => c.id === classId)
   const isPending = (classId: number) => pendingRequests.some(c => c.id === classId)
+  const hasAction = (classId: number) => isEnrolled(classId) || isPending(classId)
 
   const handleEnroll = async (classId: number) => {
-    if (isEnrolled(classId)) {
-      toast.info("Ya estás matriculado en esta clase")
-      return
-    }
-    if (isPending(classId)) {
-      toast.info("Ya tienes una solicitud pendiente")
-      return
-    }
+    if (isEnrolled(classId) || isPending(classId) || requestingRef.current !== null) return
+    requestingRef.current = classId
+    setRequestingId(classId)
     try {
       const res = await fetch(`${API}/classes/${classId}/enroll`, {
         method: "POST",
@@ -70,19 +72,43 @@ export default function ClassesPage() {
       })
       const data = await res.json()
       if (data.success) {
+        const enrolledClass = availableClasses.find(c => c.id === classId)
+        if (enrolledClass) {
+          setPendingRequests(prev => [...prev, { ...enrolledClass, enrollment_status: "pending" }])
+        }
         toast.success("Solicitud enviada. Espera la aprobación del docente.")
-        loadData()
       } else {
-        toast.error(data.error || "Error al solicitar matrícula")
+        toast.error(data.detail || data.error || "Error al solicitar matrícula")
+        // Sync with server even on error so UI reflects current state
+        await refreshEnrollments()
+        setRequestingId(null)
+        requestingRef.current = null
+        return
       }
     } catch (_) {
       toast.error("Error de conexión")
     }
+    setRequestingId(null)
+    requestingRef.current = null
+  }
+  
+  async function refreshEnrollments() {
+    try {
+      const res = await fetch(`${API}/classes/enrolled`, { credentials: "include" })
+      const data = await res.json()
+      if (data.success) {
+        const classes = data.classes || []
+        setEnrolledClasses(classes.filter((c: any) => c.enrollment_status === "approved"))
+        setPendingRequests(classes.filter((c: any) => c.enrollment_status === "pending"))
+      }
+    } catch (_) {}
   }
 
   const filteredClasses = availableClasses.filter(c =>
-    c.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    !hasAction(c.id) && (
+      c.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
   )
 
   if (isLoading) {
@@ -130,7 +156,7 @@ export default function ClassesPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <BookOpen className="w-5 h-5 text-primary" />
-              Mis Clases Activas ({enrolledClasses.length})
+              Clases Activas ({enrolledClasses.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -149,7 +175,11 @@ export default function ClassesPage() {
                     <p className="text-xs text-muted-foreground">{cls.category} · {cls.difficulty}</p>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/classes/${cls.id}`) }}>
+                    <BookOpen className="w-4 h-4 mr-1" /> Ver contenido
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -194,13 +224,15 @@ export default function ClassesPage() {
                   <Button
                     className="w-full"
                     variant={isEnrolled(cls.id) ? "outline" : "default"}
-                    disabled={isPending(cls.id)}
+                    disabled={isPending(cls.id) || requestingId === cls.id}
                     onClick={() => isEnrolled(cls.id) ? router.push(`/dashboard/classes/${cls.id}`) : handleEnroll(cls.id)}
                   >
                     {isEnrolled(cls.id) ? (
                       <>Ir a la clase <ChevronRight className="w-4 h-4 ml-1" /></>
                     ) : isPending(cls.id) ? (
-                      <><Hourglass className="w-4 h-4 mr-1" /> Pendiente</>
+                      <><Hourglass className="w-4 h-4 mr-1" /> Esperando aprobación</>
+                    ) : requestingId === cls.id ? (
+                      <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Enviando...</>
                     ) : (
                       "Solicitar Matrícula"
                     )}
