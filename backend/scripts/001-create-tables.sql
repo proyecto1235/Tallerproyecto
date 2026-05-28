@@ -364,3 +364,26 @@ CREATE TABLE IF NOT EXISTS class_exercise_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_cea_student ON class_exercise_attempts(student_id);
 CREATE INDEX IF NOT EXISTS idx_cea_exercise ON class_exercise_attempts(class_exercise_id);
+
+-- ============================================
+-- Exercise Suggestions Table (AI-assisted, pgvector-free)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS exercise_suggestions (
+    id SERIAL PRIMARY KEY,
+    original_exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    suggested_title VARCHAR(255) NOT NULL,
+    suggested_description TEXT,
+    suggested_instructions TEXT,
+    suggested_solution TEXT,
+    rationale TEXT,
+    status VARCHAR(50) DEFAULT 'pending',
+    created_by INTEGER REFERENCES users(id),
+    reviewed_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP,
+    CONSTRAINT valid_suggestion_status CHECK (status IN ('pending', 'approved', 'rejected'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_suggestions_status ON exercise_suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_suggestions_exercise ON exercise_suggestions(original_exercise_id);

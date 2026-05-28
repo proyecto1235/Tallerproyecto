@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
 
+    # Redis
+    redis_url: str = "redis://redis:6379/0"
+
+    # Ollama / Local LLM
+    ollama_url: str = "http://ollama:11434"
+    ollama_model: str = "qwen2.5-coder:1.5b"
+
     # CORS
     cors_origins: list = [
         "*"

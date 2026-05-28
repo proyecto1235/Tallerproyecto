@@ -23,6 +23,14 @@ from application.services.ai_service_impl import AIServiceImpl
 from application.services.ai_recommender import RecommendationService
 from application.services.student_predictor import StudentPredictor
 from application.services.intelligent_tutor import IntelligentTutor
+from application.services.sandbox_service import SandboxService
+from application.services.llm_service import LLMService
+from application.services.embedding_service import EmbeddingService
+from application.services.rag_service import RAGService
+from application.services.ai_tutor_service import AITutorService
+from infrastructure.adapters.output.redis.cache import AICache
+from infrastructure.adapters.output.redis.rate_limiter import RateLimiter
+from application.services.exercise_generator_service import ExerciseGeneratorService
 from infrastructure.adapters.output.mongo.behavioral_repository import BehavioralRepository
 from application.useCases.register_user import RegisterUserUseCase
 from application.useCases.get_recommendations import GetRecommendationsUseCase
@@ -177,6 +185,30 @@ class ChallengeCreate(BaseModel):
 class ChallengeSubmit(BaseModel):
     challenge_id: int
     code: str
+
+# New architecture models
+class ExerciseSuggestionRequest(BaseModel):
+    exercise_id: int
+    title: str
+    description: str
+    instructions: str
+    solution: str
+    difficulty: int
+
+class RAGIndexRequest(BaseModel):
+    text: str
+    source_type: str
+    source_id: int
+    metadata: Optional[dict] = None
+
+class RAGSearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    source_type: Optional[str] = None
+
+class AITutorAskRequest(BaseModel):
+    message: str
+    student_level: str = "beginner"
 
 # ============================================
 # Lifespan Events
@@ -353,6 +385,19 @@ ai_service = AIServiceImpl()
 behavioral_repo = BehavioralRepository()
 student_predictor = StudentPredictor()
 intelligent_tutor = IntelligentTutor(predictor=student_predictor)
+
+# New architecture services
+sandbox_service = SandboxService()
+ai_cache = AICache(redis_url=settings.redis_url)
+rate_limiter = RateLimiter(redis_url=settings.redis_url)
+llm_service = LLMService(
+    ollama_url=settings.ollama_url,
+    model=settings.ollama_model,
+)
+embedding_service = EmbeddingService(llm_service=llm_service, cache=ai_cache)
+rag_service = RAGService(embedding_service=embedding_service, llm_service=llm_service)
+ai_tutor_service = AITutorService(llm_service=llm_service, rag_service=rag_service, cache=ai_cache)
+exercise_generator_service = ExerciseGeneratorService(llm_service=llm_service)
 
 # ============================================
 # Routes - Health
@@ -1232,9 +1277,6 @@ async def submit_exercise(
     token_data: TokenData = Depends(verify_token)
 ):
     """Submit an exercise attempt, grade it, and track attempts"""
-    import io
-    from contextlib import redirect_stdout
-
     student_id = token_data.user_id
 
     if request.is_class_exercise:
@@ -1273,49 +1315,16 @@ async def submit_exercise(
     if already_passed:
         return {"success": True, "passed": True, "message": "Ya habías resuelto este ejercicio", "attempts": prev_attempts}
 
-    safe_builtins = {
-        'print': print, 'len': len, 'range': range, 'int': int,
-        'float': float, 'str': str, 'bool': bool, 'list': list,
-        'dict': dict, 'tuple': tuple, 'set': set, 'type': type,
-        'True': True, 'False': False, 'None': None,
-        'abs': abs, 'max': max, 'min': min, 'sum': sum,
-        'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
-        'zip': zip, 'map': map, 'filter': filter, 'all': all, 'any': any,
-        'round': round, 'isinstance': isinstance,
-        'ValueError': ValueError, 'TypeError': TypeError,
-        'KeyError': KeyError, 'IndexError': IndexError,
-        'Exception': Exception,
-    }
-
-    f = io.StringIO()
-    error = None
-    passed = False
-    score = 0
-
-    code_to_run = request.code
-    if exercise["solution_type"] == "test" and exercise["test_code"]:
-        code_to_run = request.code + "\n\n" + exercise["test_code"]
-
-    try:
-        env = {"__builtins__": safe_builtins}
-        with redirect_stdout(f):
-            exec(code_to_run, env)
-
-        output = f.getvalue()
-
-        if exercise["solution_type"] == "output" and exercise["solution_output"]:
-            expected = exercise["solution_output"].replace("\\n", "\n").strip()
-            actual = output.strip()
-            passed = (expected == actual)
-            score = 100.0 if passed else 0.0
-        else:
-            passed = True
-            score = 100.0
-
-    except Exception as e:
-        error = str(e)
-        passed = False
-        score = 0.0
+    grading_result = await sandbox_service.execute_and_compare(
+        code=request.code,
+        expected_output=exercise["solution_output"],
+        solution_type=exercise["solution_type"],
+        test_code=exercise["test_code"],
+    )
+    passed = grading_result["passed"]
+    score = grading_result["score"]
+    error = grading_result.get("error")
+    output = grading_result.get("output", "")
 
     insert_query = """
         INSERT INTO exercise_attempts (student_id, exercise_id, passed, score, attempt_count)
@@ -1388,7 +1397,7 @@ async def submit_exercise(
         "success": True,
         "passed": passed,
         "score": score,
-        "output": f.getvalue() if not error else None,
+        "output": output if not error else None,
         "error": error,
         "attempts": attempt_count,
         "can_view_solution": can_view_solution,
@@ -1399,9 +1408,6 @@ async def submit_exercise(
 
 async def _submit_class_exercise(request: ExerciseSubmit, student_id: int):
     """Handle submission of a class exercise (stored in class_exercises table)"""
-    import io
-    from contextlib import redirect_stdout
-
     module_id = request.class_module_id or request.module_id
 
     with PostgresConnection.get_cursor() as cursor:
@@ -1434,45 +1440,16 @@ async def _submit_class_exercise(request: ExerciseSubmit, student_id: int):
     if already_passed:
         return {"success": True, "passed": True, "message": "Ya habías resuelto este ejercicio", "attempts": prev_attempts}
 
-    safe_builtins = {
-        'print': print, 'len': len, 'range': range, 'int': int,
-        'float': float, 'str': str, 'bool': bool, 'list': list,
-        'dict': dict, 'tuple': tuple, 'set': set, 'type': type,
-        'True': True, 'False': False, 'None': None,
-        'abs': abs, 'max': max, 'min': min, 'sum': sum,
-        'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
-        'zip': zip, 'map': map, 'filter': filter, 'all': all, 'any': any,
-        'round': round, 'isinstance': isinstance,
-        'ValueError': ValueError, 'TypeError': TypeError,
-        'KeyError': KeyError, 'IndexError': IndexError,
-        'Exception': Exception,
-    }
-
-    f = io.StringIO()
-    error = None
-    passed = False
-    score = 0
-
-    code_to_run = request.code
-    if exercise["solution_type"] == "test" and exercise["test_code"]:
-        code_to_run = request.code + "\n\n" + exercise["test_code"]
-
-    try:
-        env = {"__builtins__": safe_builtins}
-        with redirect_stdout(f):
-            exec(code_to_run, env)
-        output = f.getvalue()
-        if exercise["solution_type"] == "output" and exercise["solution_output"]:
-            expected = exercise["solution_output"].replace("\\n", "\n").strip()
-            passed = (output.strip() == expected)
-            score = 100.0 if passed else 0.0
-        else:
-            passed = True
-            score = 100.0
-    except Exception as e:
-        error = str(e)
-        passed = False
-        score = 0.0
+    grading_result = await sandbox_service.execute_and_compare(
+        code=request.code,
+        expected_output=exercise["solution_output"],
+        solution_type=exercise["solution_type"],
+        test_code=exercise["test_code"],
+    )
+    passed = grading_result["passed"]
+    score = grading_result["score"]
+    error = grading_result.get("error")
+    output = grading_result.get("output", "")
 
     insert_query = """
         INSERT INTO class_exercise_attempts (student_id, class_exercise_id, class_module_id, passed, score, attempt_count)
@@ -1512,7 +1489,7 @@ async def _submit_class_exercise(request: ExerciseSubmit, student_id: int):
         "success": True,
         "passed": passed,
         "score": score,
-        "output": f.getvalue() if not error else None,
+        "output": output if not error else None,
         "error": error,
         "attempts": attempt_count,
         "can_view_solution": can_view_solution,
@@ -3268,8 +3245,6 @@ async def submit_challenge(
     token_data: TokenData = Depends(verify_token)
 ):
     """Submit a challenge attempt with code execution and grading"""
-    import io
-    from contextlib import redirect_stdout
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     student_id = token_data.user_id
@@ -3329,80 +3304,45 @@ async def submit_challenge(
         if cursor.fetchone():
             return {"success": True, "passed": True, "message": "Already passed this challenge"}
     
-    # Execute and grade
-    safe_builtins = {
-        'print': print, 'len': len, 'range': range, 'int': int,
-        'float': float, 'str': str, 'bool': bool, 'list': list,
-        'dict': dict, 'tuple': tuple, 'set': set, 'type': type,
-        'True': True, 'False': False, 'None': None,
-        'abs': abs, 'max': max, 'min': min, 'sum': sum,
-        'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
-        'zip': zip, 'map': map, 'filter': filter, 'all': all, 'any': any,
-        'round': round, 'isinstance': isinstance,
-        'ValueError': ValueError, 'TypeError': TypeError,
-        'KeyError': KeyError, 'IndexError': IndexError,
-        'Exception': Exception,
-    }
-    
-    f = io.StringIO()
-    error = None
-    passed = False
-    score = 0
-    
-    code_to_run = request.code
-    if challenge["solution_type"] == "test" and challenge["test_code"]:
-        code_to_run = request.code + "\n\n" + challenge["test_code"]
-    
-    try:
-        env = {"__builtins__": safe_builtins}
-        with redirect_stdout(f):
-            exec(code_to_run, env)
-        
-        output = f.getvalue()
-        
-        if challenge["solution_type"] == "output" and challenge["solution_output"]:
-            expected = challenge["solution_output"].strip()
-            actual = output.strip()
-            passed = (expected == actual)
-            score = 100.0 if passed else 0.0
-        elif challenge["solution_type"] == "test":
-            passed = True
-            score = 100.0
-        else:
-            passed = True
-            score = 100.0
-    except Exception as e:
-        error = str(e)
-        passed = False
-        score = 0.0
-    
+    # Execute and grade via sandbox
+    grading_result = await sandbox_service.execute_and_compare(
+        code=request.code,
+        expected_output=challenge["solution_output"],
+        solution_type=challenge["solution_type"],
+        test_code=challenge["test_code"],
+    )
+    passed = grading_result["passed"]
+    score = grading_result["score"]
+    error = grading_result.get("error")
+    output = grading_result.get("output", "")
+
     # Record attempt
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             INSERT INTO challenge_attempts (challenge_id, student_id, passed, score, attempt_count, submitted_code)
-            VALUES (%s, %s, %s, %s, 
+            VALUES (%s, %s, %s, %s,
                 (SELECT COALESCE(MAX(attempt_count), 0) + 1 FROM challenge_attempts WHERE challenge_id = %s AND student_id = %s),
                 %s)
         """, (request.challenge_id, student_id, passed, score,
               request.challenge_id, student_id, request.code))
-    
+
     # Award points if passed
     if passed:
         with PostgresConnection.get_cursor() as cursor:
             cursor.execute("UPDATE users SET points = COALESCE(points, 0) + %s WHERE id = %s",
                           (challenge["points"], student_id))
-        
+
         await check_and_award_achievements(student_id)
         await event_repository.log_event("challenge_passed", student_id, {
             "challenge_id": request.challenge_id,
             "points_earned": challenge["points"]
         })
-    
+
     return {
         "success": True,
         "passed": passed,
         "score": score,
-        "output": f.getvalue() if not error else None,
+        "output": output if not error else None,
         "error": error,
         "points_earned": challenge["points"] if passed else 0
     }
@@ -4023,6 +3963,124 @@ async def delete_class_exercise(
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (exercise_id, module_id))
     return {"success": True, "message": "Exercise deleted"}
+
+# ============================================
+# AI Routes - RAG, Tutor, Exercise Generation
+# ============================================
+
+@app.post("/api/ai/rag/index", tags=["AI"])
+async def ai_rag_index(request: RAGIndexRequest, token_data: TokenData = Depends(verify_teacher)):
+    """Index a document chunk into the RAG knowledge base"""
+    try:
+        await rag_service.index_content(
+            text=request.text,
+            source_type=request.source_type,
+            source_id=request.source_id,
+            metadata=request.metadata,
+        )
+        return {"success": True, "message": "Content indexed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Indexing error: {e}")
+
+@app.post("/api/ai/rag/search", tags=["AI"])
+async def ai_rag_search(request: RAGSearchRequest, token_data: TokenData = Depends(verify_token)):
+    """Search the RAG knowledge base"""
+    try:
+        results = await rag_service.search(
+            query=request.query,
+            top_k=request.top_k,
+            source_type=request.source_type,
+        )
+        return {"success": True, "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search error: {e}")
+
+@app.post("/api/ai/tutor/ask-v2", tags=["AI"])
+async def ai_tutor_ask(request: AITutorAskRequest, token_data: TokenData = Depends(verify_token)):
+    """Ask the AI tutor a question (LLM-based)"""
+    try:
+        response = await ai_tutor_service.answer_question(
+            message=request.message,
+            student_level=request.student_level,
+            student_context={"user_id": token_data.user_id},
+        )
+        return {"success": True, "response": response, "source": "llm_tutor"}
+    except Exception as e:
+        print(f"[AI Tutor] Error: {e}")
+        raise HTTPException(status_code=500, detail="Error al consultar el tutor")
+
+@app.post("/api/ai/tutor/hint", tags=["AI"])
+async def ai_tutor_hint(request: Request, token_data: TokenData = Depends(verify_token)):
+    """Get a contextual hint for an exercise (LLM-based)"""
+    body = await request.json()
+    try:
+        response = await ai_tutor_service.generate_hint(
+            exercise_title=body.get("title", ""),
+            exercise_desc=body.get("description", ""),
+            student_code=body.get("code", ""),
+            error_message=body.get("error"),
+            attempts=body.get("attempts", 1),
+            student_level=body.get("level", "beginner"),
+        )
+        return {"success": True, "hint": response}
+    except Exception as e:
+        print(f"[AI Hint] Error: {e}")
+        raise HTTPException(status_code=500, detail="Error al generar ayuda")
+
+@app.post("/api/ai/exercises/suggest", tags=["AI"])
+async def ai_exercises_suggest(request: ExerciseSuggestionRequest, token_data: TokenData = Depends(verify_teacher)):
+    """Generate exercise variant suggestions using AI"""
+    try:
+        suggestions = await exercise_generator_service.generate_suggestions(
+            exercise_id=request.exercise_id,
+            title=request.title,
+            description=request.description,
+            instructions=request.instructions,
+            solution=request.solution,
+            difficulty=request.difficulty,
+        )
+        saved = []
+        for s in suggestions:
+            sid = await exercise_generator_service.save_suggestion(
+                original_exercise_id=request.exercise_id,
+                suggested_title=s.get("suggested_title", ""),
+                suggested_description=s.get("suggested_description", ""),
+                suggested_instructions=s.get("suggested_instructions", ""),
+                suggested_solution=s.get("suggested_solution", ""),
+                rationale=s.get("rationale", ""),
+                created_by=token_data.user_id,
+            )
+            saved.append({"id": sid, **s})
+        return {"success": True, "suggestions": saved}
+    except Exception as e:
+        print(f"[Exercise Gen] Error: {e}")
+        raise HTTPException(status_code=500, detail="Error al generar sugerencias")
+
+@app.get("/api/ai/exercises/suggestions", tags=["AI"])
+async def ai_list_suggestions(token_data: TokenData = Depends(verify_admin)):
+    """List pending exercise suggestions"""
+    try:
+        suggestions = await exercise_generator_service.list_pending_suggestions()
+        return {"success": True, "suggestions": suggestions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ai/exercises/suggestions/{suggestion_id}/approve", tags=["AI"])
+async def ai_approve_suggestion(suggestion_id: int, token_data: TokenData = Depends(verify_admin)):
+    """Approve an exercise suggestion"""
+    result = await exercise_generator_service.approve_suggestion(suggestion_id, token_data.user_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Suggestion not found or already processed")
+    return {"success": True, "message": "Suggestion approved"}
+
+@app.post("/api/ai/exercises/suggestions/{suggestion_id}/reject", tags=["AI"])
+async def ai_reject_suggestion(suggestion_id: int, token_data: TokenData = Depends(verify_admin)):
+    """Reject an exercise suggestion"""
+    try:
+        await exercise_generator_service.reject_suggestion(suggestion_id, token_data.user_id)
+        return {"success": True, "message": "Suggestion rejected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # Error Handlers

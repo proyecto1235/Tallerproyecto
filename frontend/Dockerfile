@@ -1,27 +1,28 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install pnpm
-# RUN npm install -g pnpm
-
-# Copy package files
-COPY pnpm-lock.yaml package.json ./
-
-# Install dependencies
-#RUN pnpm install
-
-# Copy application code
-COPY . .
-
-# Build the application
-#RUN pnpm build
+COPY package.json ./
 RUN npm install
-# RUN npm run dev
 
-# Expose port
+COPY . .
+RUN npm run build
+
+# --- Production stage ---
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/next.config.* ./
+COPY --from=builder /app/next-env.d.ts ./
+
 EXPOSE 3000
 
-# Start the application
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "start"]
 

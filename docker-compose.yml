@@ -4,7 +4,7 @@ services:
   # PostgreSQL Database
   # ============================================
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: robolearn_postgres
     environment:
       POSTGRES_USER: postgres
@@ -15,8 +15,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/scripts/001-create-tables.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./backend/scripts/002-seed-data.sql:/docker-entrypoint-initdb.d/02-seed.sql
-      - ./backend/scripts/004-create-procedures.sql:/docker-entrypoint-initdb.d/03-procedures.sql
+      - ./backend/scripts/002-create-procedures.sql:/docker-entrypoint-initdb.d/02-procedures.sql
+      - ./backend/scripts/003-seed-data.sql:/docker-entrypoint-initdb.d/03-seed.sql
+      - ./backend/scripts/005-enable-pgvector.sql:/docker-entrypoint-initdb.d/05-pgvector.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -51,6 +52,44 @@ services:
       - robolearn_network
 
   # ============================================
+  # Redis Cache (for AI caching + rate limiting)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: robolearn_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: always
+    networks:
+      - robolearn_network
+
+  # ============================================
+  # Ollama (Local LLM for tutor, RAG, generation)
+  # ============================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: robolearn_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: always
+    networks:
+      - robolearn_network
+    entrypoint: sh -c "ollama serve & sleep 3 && ollama pull qwen2.5-coder:1.5b && wait"
+
+  # ============================================
   # FastAPI Backend
   # ============================================
   backend:
@@ -80,6 +119,13 @@ services:
       MONGODB_URL: mongodb://mongo:27017
       MONGODB_DB: robolearn_metrics
 
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+
+      # Ollama
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5-coder:1.5b
+
       # Dialogflow — descomenta y completa para activar el chatbot
       DIALOGFLOW_PROJECT_ID: ""
       DIALOGFLOW_AGENT_ID: ""
@@ -95,11 +141,15 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       # Monta el código para hot-reload en desarrollo
       - ./backend:/app
       # Monta la clave de servicio de Google (si existe)
-      - ./robolearn-key.json:/app/robolearn-key.json
+      - ./backend/robolearn-key.json:/app/robolearn-key.json
+      # Docker socket for sandboxing
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: always
     networks:
       - robolearn_network
@@ -121,10 +171,6 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     restart: always
     networks:
       - robolearn_network
@@ -132,6 +178,8 @@ services:
 volumes:
   postgres_data:
   mongo_data:
+  redis_data:
+  ollama_data:
 
 networks:
   robolearn_network:
