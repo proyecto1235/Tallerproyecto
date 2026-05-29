@@ -735,17 +735,34 @@ async def get_class_predictions(
 
     results = []
     for (sid,) in student_rows:
-        profile = await behavioral_repo.get_student_behavioral_profile(sid)
-        metrics = await student_predictor.predict_metrics(profile)
-        results.append({
-            "student_id": sid,
-            **metrics,
-        })
+        try:
+            profile = await behavioral_repo.get_student_behavioral_profile(sid)
+            metrics = await student_predictor.predict_metrics(profile)
+            results.append({
+                "student_id": sid,
+                **metrics,
+            })
+        except Exception as e:
+            print(f"[WARN] Failed to predict for student {sid}: {e}")
+            results.append({
+                "student_id": sid,
+                "dropout_risk": 0.0,
+                "performance_score": 0.0,
+                "engagement_score": 0.0,
+                "frustration_level": 0,
+                "performance_label": "unknown",
+                "dropout_risk_label": "low",
+                "frustration_label": "baja",
+            })
 
-    classification = await student_predictor.classify_students([
-        await behavioral_repo.get_student_behavioral_profile(r["student_id"])
-        for r in results
-    ])
+    try:
+        classification = await student_predictor.classify_students([
+            await behavioral_repo.get_student_behavioral_profile(r["student_id"])
+            for r in results
+        ])
+    except Exception as e:
+        print(f"[WARN] classify_students failed: {e}")
+        classification = {"at_risk": [], "excellent": []}
 
     avg_dropout = sum(r["dropout_risk"] for r in results) / len(results) if results else 0
     avg_performance = sum(r["performance_score"] for r in results) / len(results) if results else 0
@@ -826,33 +843,37 @@ async def get_analytics_dashboard(
     token_data: TokenData = Depends(verify_teacher),
 ):
     """Get the full analytics dashboard for teachers"""
-    class_preds = await get_class_predictions(days=days, token_data=token_data)
+    class_preds = None
+    try:
+        class_preds = await get_class_predictions(days=days, token_data=token_data)
+    except Exception as e:
+        print(f"[WARN] get_class_predictions failed: {e}")
+        class_preds = {"success": True, "students": [], "summary": {}}
 
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
+    daily_activity = []
+    frustration_trend = []
     try:
         db = await behavioral_repo.get_db()
-
-        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        daily_activity = list(db.behavioral_events.aggregate([
-            {"$match": {"timestamp": {"$gte": week_ago}}},
-            {"$group": {
-                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
-                "count": {"$sum": 1},
-            }},
-            {"$sort": {"_id": 1}},
-        ]))
-
-        frustration_trend = list(db.frustration_signals.aggregate([
-            {"$match": {"timestamp": {"$gte": week_ago}}},
-            {"$group": {
-                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
-                "count": {"$sum": 1},
-            }},
-            {"$sort": {"_id": 1}},
-        ]))
+        if db is not None:
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            daily_activity = list(db.behavioral_events.aggregate([
+                {"$match": {"timestamp": {"$gte": week_ago}}},
+                {"$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ]))
+            frustration_trend = list(db.frustration_signals.aggregate([
+                {"$match": {"timestamp": {"$gte": week_ago}}},
+                {"$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                    "count": {"$sum": 1},
+                }},
+                {"$sort": {"_id": 1}},
+            ]))
     except Exception as e:
-        daily_activity = []
-        frustration_trend = []
         print(f"[WARN] MongoDB analytics fetch: {e}")
 
     return {
@@ -1066,6 +1087,24 @@ async def chat_public(request: PublicChatRequest):
     if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
         return {"success": True, "message": dialogflow_response, "session_id": session_id}
 
+    # Dialogflow fallback — try Ollama directly first
+    if ai_service.is_fallback_response(dialogflow_response or ""):
+        try:
+            ollama_response = await ai_tutor_service.answer_question(
+                message=request.message,
+                student_level="beginner",
+            )
+            if ollama_response and len(ollama_response) > 10:
+                return {
+                    "success": True,
+                    "message": ollama_response,
+                    "session_id": session_id,
+                    "source": "ollama",
+                }
+        except Exception as e:
+            print(f"[Ollama fallback error] {e}")
+
+    # Fallback: IntelligentTutor if Ollama didn't produce a response
     tutor_result = await intelligent_tutor.generate_response(
         message=request.message,
         student_profile=None,
@@ -1114,16 +1153,33 @@ async def chat(
             "source": "dialogflow",
         }
 
-    tutor_result = await intelligent_tutor.generate_response(
-        message=request.message,
-        student_profile=student_profile,
-        dialogflow_result=dialogflow_response,
-    )
+    response_text = ""
+    tutor_result = {"source": "tutor", "intent": "general_chat"}
 
-    response_text = tutor_result["response"]
+    # Third tier: Ollama fallback when Dialogflow didn't understand
+    if ai_service.is_fallback_response(dialogflow_response or ""):
+        try:
+            ollama_response = await ai_tutor_service.answer_question(
+                message=request.message,
+                student_level="beginner",
+                student_context=student_profile,
+            )
+            if ollama_response and len(ollama_response) > 10:
+                response_text = ollama_response
+                tutor_result = {"source": "ollama", "intent": "general_chat"}
+        except Exception as e:
+            print(f"[Ollama fallback error] {e}")
 
-    # Third tier: OpenAI fallback if tutor confidence is low and API key is configured
-    if tutor_result.get("intent") in ("general_chat", "fallback") and settings.openai_api_key:
+    if tutor_result.get("source") != "ollama":
+        tutor_result = await intelligent_tutor.generate_response(
+            message=request.message,
+            student_profile=student_profile,
+            dialogflow_result=dialogflow_response,
+        )
+        response_text = tutor_result["response"]
+
+    # Fourth tier: OpenAI fallback if still no good response
+    if tutor_result.get("source") != "ollama" and tutor_result.get("intent") in ("general_chat", "fallback") and settings.openai_api_key:
         try:
             import openai
             openai.api_key = settings.openai_api_key

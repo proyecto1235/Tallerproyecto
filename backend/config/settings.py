@@ -32,20 +32,20 @@ class Settings(BaseSettings):
     mongodb_db: str = "robolearn_metrics"
 
     # Dialogflow
-    dialogflow_project_id: Optional[str] = None
-    dialogflow_agent_id: Optional[str] = None
-    google_credentials_path: Optional[str] = None
+    dialogflow_project_id: Optional[str] = "roboloarnchatbot-vpif"
+    # dialogflow_agent_id: Optional[str] = 
+    google_credentials_path: Optional[str] = "./robolearn-key.json"
 
     # AI / OpenAI
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
+    # openai_api_key: Optional[str] = None
+    # openai_model: str = "gpt-4o-mini"
 
     # Redis
     redis_url: str = "redis://redis:6379/0"
 
     # Ollama / Local LLM
-    ollama_url: str = "http://ollama:11434"
-    ollama_model: str = "qwen2.5-coder:1.5b"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:3b"
 
     # CORS
     cors_origins: list = [

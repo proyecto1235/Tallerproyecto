@@ -170,14 +170,6 @@ class IntelligentTutor:
         frustration = self._should_adapt_to_frustration(student_profile)
         now = datetime.now(timezone.utc)
 
-        if dialogflow_result and intent_data["intent"] == "general_chat":
-            return {
-                "response": dialogflow_result,
-                "source": "dialogflow",
-                "intent": "general_chat",
-                "student_level": level,
-            }
-
         if intent_data["intent"] == "greeting":
             name = ""
             if student_profile and student_profile.get("user_id"):
@@ -240,14 +232,6 @@ class IntelligentTutor:
                 "response": self._recommendation_response(level, student_profile),
                 "source": "tutor",
                 "intent": "recommend",
-                "student_level": level,
-            }
-
-        if intent_data["confidence"] < 0.5 and dialogflow_result:
-            return {
-                "response": dialogflow_result,
-                "source": "dialogflow",
-                "intent": intent_data["intent"],
                 "student_level": level,
             }
 

@@ -9,12 +9,18 @@ class EmbeddingService:
 
     async def embed_text(self, text: str) -> list[float]:
         if self.cache:
-            cached = await self.cache.get_cached_embedding(text)
-            if cached:
-                return cached
+            try:
+                cached = await self.cache.get_cached_embedding(text)
+                if cached:
+                    return cached
+            except Exception:
+                pass
         embedding = await self.llm.embed(text[:2000])
         if self.cache:
-            await self.cache.cache_embedding(text, embedding)
+            try:
+                await self.cache.cache_embedding(text, embedding)
+            except Exception:
+                pass
         return embedding
 
     def chunk_text(self, text: str, max_chars: int = 500, overlap: int = 50) -> list[str]:

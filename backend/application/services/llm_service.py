@@ -4,7 +4,7 @@ from typing import Optional
 import httpx
 
 class LLMService:
-    def __init__(self, ollama_url: str = "http://ollama:11434", model: str = "qwen2.5-coder:1.5b", timeout: int = 60):
+    def __init__(self, ollama_url: str = "http://localhost:11434", model: str = "qwen2.5-coder:1.5b", timeout: int = 120):
         self.base_url = ollama_url
         self.model = model
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout))

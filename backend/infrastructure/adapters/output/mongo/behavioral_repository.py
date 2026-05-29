@@ -138,7 +138,7 @@ class BehavioralRepository:
 
     async def update_engagement_score(self, user_id: int, module_id: Optional[int] = None):
         db = await self.get_db()
-        if db is None: return {"engagement_score": 0.5}
+        if db is None: return {"user_id": user_id, "engagement_score": 0.5}
         loop = asyncio.get_event_loop()
         try:
             def _calc():
@@ -170,7 +170,7 @@ class BehavioralRepository:
 
     async def get_student_behavioral_profile(self, user_id: int) -> Dict:
         db = await self.get_db()
-        if db is None: return {"engagement_score": 0.5}
+        if db is None: return {"user_id": user_id, "engagement_score": 0.5}
         loop = asyncio.get_event_loop()
         try:
             def _get():
@@ -207,7 +207,7 @@ class BehavioralRepository:
                 }
             return await loop.run_in_executor(None, _get)
         except Exception:
-            return {"engagement_score": 0.5}
+            return {"user_id": user_id, "engagement_score": 0.5}
 
     async def _count_exercise_attempts_30d(self, user_id: int) -> int:
         db = await self.get_db()

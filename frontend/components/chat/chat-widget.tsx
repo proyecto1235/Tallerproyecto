@@ -3,13 +3,14 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { MessageCircle, X, Send, Bot, User, Loader2, ChevronDown } from "lucide-react"
+import { MessageCircle, X, Send, Bot, User, Brain, Loader2, ChevronDown } from "lucide-react"
 
 interface Message {
   id: string
   role: "user" | "bot"
   text: string
   timestamp: number
+  source?: string
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
@@ -112,7 +113,8 @@ export function ChatWidget() {
         id: generateId(),
         role: "bot",
         text: botText,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        source: data.source || "tutor",
       }
       setMessages(prev => [...prev, botMsg])
     } catch {
@@ -202,11 +204,13 @@ export function ChatWidget() {
               >
                 <div
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full mt-1 ${
-                    msg.role === "user" ? "bg-primary/10" : "bg-secondary/10"
+                    msg.role === "user" ? "bg-primary/10" : msg.source === "ollama" ? "bg-purple-500/10" : "bg-secondary/10"
                   }`}
                 >
                   {msg.role === "user" ? (
                     <User className="h-3.5 w-3.5 text-primary" />
+                  ) : msg.source === "ollama" ? (
+                    <Brain className="h-3.5 w-3.5 text-purple-500" />
                   ) : (
                     <Bot className="h-3.5 w-3.5 text-secondary" />
                   )}
@@ -215,10 +219,18 @@ export function ChatWidget() {
                   className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground rounded-tr-md"
+                      : msg.source === "ollama"
+                      ? "bg-purple-500/10 text-foreground border border-purple-500/20 rounded-tl-md"
                       : "bg-muted text-foreground rounded-tl-md"
                   }`}
                 >
-                  {msg.text}
+                  {msg.source === "ollama" && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-500 mb-1.5 uppercase tracking-wide">
+                      <Brain className="h-3 w-3" />
+                      IA Local
+                    </span>
+                  )}
+                  <div>{msg.text}</div>
                 </div>
               </div>
             </div>

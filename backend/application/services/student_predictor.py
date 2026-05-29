@@ -246,10 +246,11 @@ class StudentPredictor:
         excellent = []
         for p in profiles:
             metrics = await self.predict_metrics(p)
+            uid = p.get("user_id", "unknown")
             if metrics["dropout_risk"] > 0.5 or metrics["performance_score"] < 0.3:
-                at_risk.append({"user_id": p["user_id"], **metrics})
+                at_risk.append({"user_id": uid, **metrics})
             if metrics["performance_score"] > 0.8:
-                excellent.append({"user_id": p["user_id"], **metrics})
+                excellent.append({"user_id": uid, **metrics})
         return {"at_risk": at_risk, "excellent": excellent}
 
     async def get_insights(self, profile: Dict[str, Any]) -> List[str]:

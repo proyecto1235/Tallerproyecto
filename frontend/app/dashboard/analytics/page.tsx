@@ -26,12 +26,9 @@ export default function AnalyticsPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchDashboard = async () => {
       try {
-        const [dashRes, diffRes] = await Promise.all([
-          fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" }),
-          fetch(`${API_URL}/exercises/difficulty-analysis`, { credentials: "include" }),
-        ])
+        const dashRes = await fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" })
         const json = await dashRes.json()
         if (json.success) {
           const cp = json.class_predictions || {}
@@ -39,18 +36,30 @@ export default function AnalyticsPage() {
           setStudents(cp.students || [])
           setSummary(cp.summary || {})
         } else {
-          setErrorMsg(json.error || "Error al cargar")
+          setErrorMsg(json.detail || json.error || "Error al cargar analítica")
         }
+      } catch (err: any) {
+        setErrorMsg(err.message || "Error de conexión al cargar analítica")
+      }
+    }
+
+    const fetchDifficulty = async () => {
+      try {
+        const diffRes = await fetch(`${API_URL}/exercises/difficulty-analysis`, { credentials: "include" })
         const diffJson = await diffRes.json()
         if (diffJson.success) {
           setDifficultyAnalysis(diffJson.suggestions || [])
         }
-      } catch (err: any) {
-        setErrorMsg(err.message || "Error de conexión")
-      } finally {
-        setIsLoading(false)
+      } catch {
+        // Silently fail — difficulty analysis is secondary
       }
     }
+
+    const fetchData = async () => {
+      await Promise.all([fetchDashboard(), fetchDifficulty()])
+      setIsLoading(false)
+    }
+
     fetchData()
   }, [])
 

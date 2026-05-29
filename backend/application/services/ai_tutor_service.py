@@ -36,7 +36,10 @@ class AITutorService:
     async def answer_question(self, message: str, student_level: str = "beginner", student_context: dict = None) -> str:
         rag_context = ""
         if self.rag:
-            rag_context = await self.rag.build_context(message)
+            try:
+                rag_context = await self.rag.build_context(message)
+            except Exception as e:
+                print(f"[AITutor] RAG unavailable: {e}")
 
         context_str = ""
         if rag_context:
@@ -54,7 +57,10 @@ class AITutorService:
     async def generate_hint(self, exercise_title: str, exercise_desc: str, student_code: str, error_message: str = None, attempts: int = 1, student_level: str = "beginner") -> str:
         rag_context = ""
         if self.rag and error_message:
-            rag_context = await self.rag.build_context(error_message, top_k=2)
+            try:
+                rag_context = await self.rag.build_context(error_message, top_k=2)
+            except Exception as e:
+                print(f"[AITutor] RAG unavailable for hint: {e}")
 
         prompt = f"""El estudiante está resolviendo este ejercicio:
 Título: {exercise_title}
@@ -83,7 +89,10 @@ Nivel: {student_level}.
     async def explain_concept(self, concept: str, student_level: str = "beginner") -> str:
         rag_context = ""
         if self.rag:
-            rag_context = await self.rag.build_context(concept, top_k=3)
+            try:
+                rag_context = await self.rag.build_context(concept, top_k=3)
+            except Exception as e:
+                print(f"[AITutor] RAG unavailable for concept: {e}")
 
         context_str = ""
         if rag_context:

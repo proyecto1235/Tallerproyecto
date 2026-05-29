@@ -7,10 +7,24 @@ class AICache:
     def __init__(self, redis_url: str = "redis://redis:6379/0"):
         self.redis_url = redis_url
         self._redis: Optional[aioredis.Redis] = None
+        self._available: Optional[bool] = None
 
-    async def _get_redis(self) -> aioredis.Redis:
+    async def _get_redis(self) -> Optional[aioredis.Redis]:
+        if self._available is False:
+            return None
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url, decode_responses=True)
+            try:
+                self._redis = await aioredis.from_url(
+                    self.redis_url, decode_responses=True,
+                    socket_connect_timeout=2, socket_timeout=2,
+                )
+                await self._redis.ping()
+                self._available = True
+            except Exception as e:
+                print(f"[AICache] Redis unavailable: {e}")
+                self._available = False
+                self._redis = None
+                return None
         return self._redis
 
     async def _make_key(self, prefix: str, data: Any) -> str:
@@ -20,16 +34,19 @@ class AICache:
 
     async def get_cached_response(self, prompt: str, model: str = "default") -> Optional[str]:
         r = await self._get_redis()
+        if r is None: return None
         key = await self._make_key("ai_response", f"{model}:{prompt}")
         return await r.get(key)
 
     async def cache_response(self, prompt: str, response: str, model: str = "default", ttl: int = 3600):
         r = await self._get_redis()
+        if r is None: return
         key = await self._make_key("ai_response", f"{model}:{prompt}")
         await r.setex(key, ttl, response)
 
     async def get_cached_embedding(self, text: str) -> Optional[list[float]]:
         r = await self._get_redis()
+        if r is None: return None
         key = await self._make_key("embed", text)
         val = await r.get(key)
         if val:
@@ -38,11 +55,13 @@ class AICache:
 
     async def cache_embedding(self, text: str, embedding: list[float], ttl: int = 86400):
         r = await self._get_redis()
+        if r is None: return
         key = await self._make_key("embed", text)
         await r.setex(key, ttl, json.dumps(embedding))
 
     async def clear(self, pattern: str = "ai_response:*"):
         r = await self._get_redis()
+        if r is None: return
         cursor = 0
         while True:
             cursor, keys = await r.scan(cursor=cursor, match=pattern, count=100)
