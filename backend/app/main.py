@@ -254,20 +254,51 @@ app = FastAPI(
 # CORS Middleware
 # ============================================
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ============================================
+# Audit Logging Middleware
+# ============================================
+
+AUDIT_PATHS = [
+    "/api/auth/", "/api/admin/", "/api/users/profile",
+    "/api/execute-code", "/api/exercises/submit",
+]
+
+@app.middleware("http")
+async def audit_logging(request: Request, call_next):
+    if any(request.url.path.startswith(p) for p in AUDIT_PATHS):
+        ip = request.client.host if request.client else "unknown"
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            ip = forwarded.split(",")[0].strip()
+        method = request.method
+        path = request.url.path
+        print(f"[AUDIT] {ip} - {method} {path}")
+    response = await call_next(request)
+    return response
+
+# ============================================
+# Security Headers Middleware
+# ============================================
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if settings.node_env == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 # ============================================
 # Utilities
@@ -295,6 +326,15 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"success": False, "detail": "Error interno del servidor"},
     )
 
+async def is_token_blacklisted(token: str) -> bool:
+    try:
+        r = await rate_limiter._get_redis()
+        if r:
+            return await r.exists(f"token_blacklist:{token}")
+    except Exception:
+        pass
+    return False
+
 async def verify_token(request: Request) -> TokenData:
     """Verify JWT token from cookies"""
     token = request.cookies.get("auth-token")
@@ -303,6 +343,12 @@ async def verify_token(request: Request) -> TokenData:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated"
+        )
+    
+    if await is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked"
         )
     
     try:
@@ -418,8 +464,9 @@ async def health():
 # ============================================
 
 @app.post("/api/auth/register", tags=["Auth"])
-async def register(request: RegisterRequest, response: Response):
+async def register(request: RegisterRequest, response: Response, http_request: Request):
     """Register a new user"""
+    await rate_limiter.check_by_ip(http_request, "register", max_requests=5, window_seconds=300)
     use_case = RegisterUserUseCase(user_repository)
     result = await use_case.execute(
         email=request.email,
@@ -445,8 +492,8 @@ async def register(request: RegisterRequest, response: Response):
         value=token,
         httponly=True,
         secure=settings.node_env == "production",
-        samesite="lax",
-        max_age=60 * 60 * 24 * 7,  # 7 days
+        samesite="strict",
+        max_age=settings.access_token_expire_minutes * 60,
     )
     
     return {
@@ -456,8 +503,9 @@ async def register(request: RegisterRequest, response: Response):
     }
 
 @app.post("/api/auth/login", tags=["Auth"])
-async def login(request: LoginRequest, response: Response):
+async def login(request: LoginRequest, response: Response, http_request: Request):
     """Login user"""
+    await rate_limiter.check_by_ip(http_request, "login", max_requests=10, window_seconds=60)
     print(f"DEBUG: Login attempt for {request.email}")
 
     user = await user_repository.get_by_email(request.email)
@@ -489,8 +537,8 @@ async def login(request: LoginRequest, response: Response):
         value=token,
         httponly=True,
         secure=settings.node_env == "production",
-        samesite="lax",
-        max_age=60 * 60 * 24 * 7,
+        samesite="strict",
+        max_age=settings.access_token_expire_minutes * 60,
     )
 
     # Log event to MongoDB (fire-and-forget, don't block login)
@@ -512,10 +560,27 @@ async def login(request: LoginRequest, response: Response):
     }
 
 @app.post("/api/auth/logout", tags=["Auth"])
-async def logout(response: Response, token_data: TokenData = Depends(verify_token)):
+async def logout(http_request: Request, response: Response, token_data: TokenData = Depends(verify_token)):
     """Logout user"""
-    # Delete the cookie
-    response.delete_cookie(key="auth-token")
+    try:
+        r = await rate_limiter._get_redis()
+        if r:
+            token = http_request.cookies.get("auth-token")
+            if token:
+                exp = int(token_data.exp.timestamp())
+                ttl = max(exp - int(datetime.now(timezone.utc).timestamp()), 0)
+                if ttl > 0:
+                    await r.setex(f"token_blacklist:{token}", ttl, "1")
+    except Exception:
+        pass
+    
+    response.delete_cookie(
+        key="auth-token",
+        path="/",
+        secure=settings.node_env == "production",
+        samesite="lax",
+        httponly=True,
+    )
     
     await event_repository.log_event(
         "user_logout",
@@ -573,7 +638,7 @@ async def update_profile(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/users/by-public-id/{public_id}", tags=["Users"])
-async def get_user_by_public_id(public_id: str):
+async def get_user_by_public_id(public_id: str, token_data: Optional[TokenData] = Depends(verify_token_optional)):
     """Get user by public UUID"""
     user = await user_repository.get_by_public_id(public_id)
 
@@ -585,7 +650,7 @@ async def get_user_by_public_id(public_id: str):
     return {"success": True, "user": user_data}
 
 @app.get("/api/users/{user_id}", tags=["Users"])
-async def get_user(user_id: int):
+async def get_user(user_id: int, token_data: TokenData = Depends(verify_token)):
     """Get user by ID"""
     user = await user_repository.get_by_id(user_id)
     
@@ -598,7 +663,7 @@ async def get_user(user_id: int):
     return {"success": True, "user": user_data}
 
 @app.get("/api/users/search", tags=["Users"])
-async def search_users(q: str = ""):
+async def search_users(q: str = "", token_data: TokenData = Depends(verify_token)):
     """Search users by name"""
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
     if not q:
@@ -1074,8 +1139,9 @@ async def train_predictive_models(
 # ============================================
 
 @app.post("/api/chatbot/public", tags=["Chatbot"])
-async def chat_public(request: PublicChatRequest):
+async def chat_public(request: PublicChatRequest, http_request: Request):
     """Chat with Dialogflow agent (no auth required, for anonymous users)"""
+    await rate_limiter.check_by_ip(http_request, "public_chat", max_requests=20, window_seconds=60)
     session_id = request.session_id or f"anon_{datetime.now(timezone.utc).timestamp()}"
 
     dialogflow_response = None
@@ -1240,14 +1306,26 @@ Responde de forma breve, clara y en español. Si la consulta no es educativa, re
 @app.post("/api/execute-code", tags=["Interactive"])
 async def execute_code(
     request: ExecuteRequest,
-    token_data: TokenData = Depends(verify_token)
+    http_request: Request,
+    token_data: TokenData = Depends(verify_token),
 ):
     """Execute Python code for interactive exercises with security restrictions"""
+    await rate_limiter.check_by_user(token_data.user_id, "execute", max_requests=30, window_seconds=60)
+    
     import io
     import sys
     import ast
     import signal
     from contextlib import redirect_stdout
+    
+    # Restrict maximum code length
+    if len(request.code) > 10000:
+        return {
+            "success": False,
+            "output": "",
+            "actions": [],
+            "error": "Code exceeds maximum length of 10000 characters"
+        }
     
     # Blacklisted patterns for basic security
     dangerous_patterns = [
@@ -1255,6 +1333,9 @@ async def execute_code(
         "import shutil", "from shutil", "import sys", "from sys",
         "__import__", "eval(", "exec(", "open(", "__builtins__",
         "import socket", "from socket", "import requests", "from requests",
+        "import ctypes", "from ctypes", "import multiprocessing",
+        "__reduce__", "__subclasshook__", "__init_subclass__",
+        "__dir__", "__getattribute__", "__setattr__",
     ]
     
     for pattern in dangerous_patterns:

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { toast } from "sonner"
 
 export interface User {
   id: number
@@ -21,12 +20,8 @@ interface AuthState {
   isAuthenticated: boolean
 }
 
-// Remove trailing slash if present
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
 
-/**
- * Mapea los datos del backend al formato del frontend
- */
 function mapBackendUserToFrontend(backendData: any): User {
   return {
     id: backendData.id || 0,
@@ -39,19 +34,6 @@ function mapBackendUserToFrontend(backendData: any): User {
     publicId: backendData.public_id || backendData.publicId || null,
     teacherRequestStatus: backendData.teacher_request_status || backendData.teacherRequestStatus || null,
   }
-}
-
-/**
- * Fallback de usuario para cuando el backend está offline
- */
-const MOCK_USER: User = {
-  id: 1,
-  email: "estudiante@robolearn.com",
-  fullName: "Estudiante Piloto",
-  role: "student",
-  points: 1500,
-  streakDays: 5,
-  publicId: "mock-public-id",
 }
 
 import { clearAuthCookies } from "@/app/actions/auth"
@@ -72,18 +54,14 @@ export function useAuth() {
         },
         credentials: "include",
       })
-      
-      // Manejo de expiración o sesión inválida
+
       if (res.status === 401 || res.status === 404) {
-        localStorage.removeItem("mock_session")
         try { await clearAuthCookies() } catch (e) {}
         setState({
           user: null,
           isLoading: false,
           isAuthenticated: false,
         })
-        // Usamos window.location.href para forzar recarga y limpiar todos los estados locales
-        // No redirigir si estamos en login o register (rutas públicas)
         if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
             window.location.href = '/login'
         }
@@ -96,99 +74,52 @@ export function useAuth() {
 
       const data = await res.json()
       const userData = data.user || data
-      
+
       setState({
         user: mapBackendUserToFrontend(userData),
         isLoading: false,
         isAuthenticated: true,
       })
     } catch (error) {
-      // Usamos console.info en lugar de warn/error con el objeto de error 
-      // para evitar que Next.js lo muestre como un stack trace rojo en la terminal.
-      console.info("Info: Backend inactivo. Activando fallback de sesión local.")
-      
-      // Fallback: Verificar si hay una sesión mockeada guardada
-      const mockSession = localStorage.getItem("mock_session")
-      if (mockSession) {
-        setState({
-          user: JSON.parse(mockSession),
-          isLoading: false,
-          isAuthenticated: true,
-        })
-      } else {
-        console.warn("Backend inactivo, usando fallback local de Registro.")
-
-        const fallbackUser = { ...MOCK_USER, role: "student" } as User
-        localStorage.setItem("mock_session", JSON.stringify(fallbackUser))
-
-        setState({
-          user: fallbackUser,
-          isLoading: false,
-          isAuthenticated: true,
-        })
-
-        window.location.href = "/dashboard"
-        return { user: fallbackUser }
-      }
+      console.info("Backend inactivo. No se puede verificar la sesión.")
+      setState({
+        user: null,
+        isLoading: false,
+        isAuthenticated: false,
+      })
     }
   }, [])
 
   useEffect(() => {
     checkSession()
-    // Solo ejecutar una vez al montar
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [checkSession])
 
   const login = async (email: string, password: string) => {
-    try {
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      })
-      
-      const data = await res.json()
-      
-      if (!res.ok) {
-        throw new Error(data.error || data.detail || "Error al iniciar sesión")
-      }
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
+    })
 
-      const userData = mapBackendUserToFrontend(data.user || data)
-      
-      setState({
-        user: userData,
-        isLoading: false,
-        isAuthenticated: true,
-      })
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      window.location.href = "/dashboard"
-      return data
-    } catch (error: any) {
-      // Si el error parece ser de red (TypeError, o contiene "fetch" o "NetworkError"), usamos el fallback
-      const isNetworkError = error instanceof TypeError || 
-                             (error.message && (error.message.toLowerCase().includes("fetch") || error.message.includes("NetworkError")));
-                             
-      if (!isNetworkError) {
-        throw error;
-      }
-      
-      console.warn("Backend inactivo, usando fallback local de Login.")
-      
-      const fallbackUser = { ...MOCK_USER, email }
-      localStorage.setItem("mock_session", JSON.stringify(fallbackUser))
-      
-      setState({
-        user: fallbackUser,
-        isLoading: false,
-        isAuthenticated: true,
-      })
-      
-      window.location.href = "/dashboard"
-      return { user: fallbackUser }
+    const data = await res.json()
+
+    if (!res.ok) {
+      throw new Error(data.error || data.detail || "Error al iniciar sesión")
     }
+
+    const userData = mapBackendUserToFrontend(data.user || data)
+
+    setState({
+      user: userData,
+      isLoading: false,
+      isAuthenticated: true,
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    window.location.href = "/dashboard"
+    return data
   }
 
   const register = async (
@@ -197,66 +128,34 @@ export function useAuth() {
     fullName: string,
     requestTeacher: boolean = false
   ) => {
-    try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password, full_name: fullName, request_teacher: requestTeacher }),
-      })
-      
-      const data = await res.json()
-      
-      if (!res.ok) {
-        throw new Error(data.error || data.detail || "Error al crear la cuenta")
-      }
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password, full_name: fullName, request_teacher: requestTeacher }),
+    })
 
-      const userData = mapBackendUserToFrontend(data.user || data)
-      
-      setState({
-        user: userData,
-        isLoading: false,
-        isAuthenticated: true,
-      })
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      window.location.href = "/dashboard"
-      return data
-    } catch (error: any) {
-      const isNetworkError = error instanceof TypeError || 
-                             (error.message && (error.message.toLowerCase().includes("fetch") || error.message.includes("NetworkError")));
-                             
-      if (!isNetworkError) {
-        throw error;
-      }
-      
-      console.warn("Backend inactivo, usando fallback local de Registro.")
-      
-      const fallbackUser = { ...MOCK_USER, email, fullName, role: requestTeacher ? "teacher" : "student" } as User
-      localStorage.setItem("mock_session", JSON.stringify(fallbackUser))
-      
-      if (requestTeacher) {
-        // Store a pending teacher request in localStorage for admin to see
-        const pending = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
-        pending.push({ id: Date.now(), name: fullName, email, date: new Date().toISOString(), status: "pending" })
-        localStorage.setItem("robolearn_teacher_pending", JSON.stringify(pending))
-      }
-      
-      setState({
-        user: fallbackUser,
-        isLoading: false,
-        isAuthenticated: true,
-      })
-      
-      window.location.href = "/dashboard"
-      return { user: fallbackUser }
+    const data = await res.json()
+
+    if (!res.ok) {
+      throw new Error(data.error || data.detail || "Error al crear la cuenta")
     }
+
+    const userData = mapBackendUserToFrontend(data.user || data)
+
+    setState({
+      user: userData,
+      isLoading: false,
+      isAuthenticated: true,
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    window.location.href = "/dashboard"
+    return data
   }
 
   const logout = () => {
-    // Redirigir a la página de logout intermedia que se encarga
-    // de mostrar "Saliendo..." y realizar la limpieza de forma segura.
     window.location.href = "/logout"
   }
 

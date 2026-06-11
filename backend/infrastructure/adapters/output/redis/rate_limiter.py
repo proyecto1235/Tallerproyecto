@@ -7,14 +7,30 @@ class RateLimiter:
     def __init__(self, redis_url: str = "redis://redis:6379/0"):
         self.redis_url = redis_url
         self._redis: Optional[aioredis.Redis] = None
+        self._available: Optional[bool] = None
 
-    async def _get_redis(self) -> aioredis.Redis:
+    async def _get_redis(self) -> Optional[aioredis.Redis]:
+        if self._available is False:
+            return None
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url, decode_responses=True)
+            try:
+                self._redis = await aioredis.from_url(
+                    self.redis_url, decode_responses=True,
+                    socket_connect_timeout=2, socket_timeout=2,
+                )
+                await self._redis.ping()
+                self._available = True
+            except Exception as e:
+                print(f"[RateLimiter] Redis unavailable: {e}")
+                self._available = False
+                self._redis = None
+                return None
         return self._redis
 
     async def check(self, key: str, max_requests: int, window_seconds: int = 60):
         r = await self._get_redis()
+        if r is None:
+            return
         now = int(time.time())
         window_key = f"ratelimit:{key}:{now // window_seconds}"
 

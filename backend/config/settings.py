@@ -6,42 +6,37 @@ class Settings(BaseSettings):
     model_config = ConfigDict(
         env_file=".env",
         case_sensitive=False,
-        extra="ignore"  # Ignora campos no definidos del .env
+        extra="ignore"
     )
 
     # App
     app_name: str = "Robolearn API"
     app_version: str = "1.0.0"
     debug: bool = False
-    node_env: Optional[str] = "development"  # Agregado para .env
+    node_env: str = "production"
 
     # Security
-    secret_key: str = "your-secret-key-change-in-production-robolearn"
+    secret_key: str = ""
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 10080
+    access_token_expire_minutes: int = 60
 
     # PostgreSQL
     postgres_user: str = "postgres"
-    postgres_password: str = "123123123"
+    postgres_password: str = ""
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "robolearn"
 
     # MongoDB
-    mongodb_url: str = "mongodb://mongo:27017"
+    mongodb_url: str = "mongodb://localhost:27017"
     mongodb_db: str = "robolearn_metrics"
 
     # Dialogflow
-    dialogflow_project_id: Optional[str] = "roboloarnchatbot-vpif"
-    # dialogflow_agent_id: Optional[str] = 
-    google_credentials_path: Optional[str] = "./robolearn-key.json"
-
-    # AI / OpenAI
-    # openai_api_key: Optional[str] = None
-    # openai_model: str = "gpt-4o-mini"
+    dialogflow_project_id: Optional[str] = None
+    google_credentials_path: Optional[str] = None
 
     # Redis
-    redis_url: str = "redis://redis:6379/0"
+    redis_url: str = "redis://localhost:6379/0"
 
     # Ollama / Local LLM
     ollama_url: str = "http://localhost:11434"
@@ -49,7 +44,7 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list = [
-        "*"
+        "http://localhost:3000"
     ]
 
     @field_validator("cors_origins", mode="before")
@@ -58,6 +53,16 @@ class Settings(BaseSettings):
         """Parse CORS origins from string or list format"""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
+        return v
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v):
+        if not v or v == "" or "change-in-production" in v.lower() or "your-secret" in v.lower():
+            raise ValueError(
+                "SECRET_KEY must be set to a strong, unique value in production. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
         return v
 
 settings = Settings()

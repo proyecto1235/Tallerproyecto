@@ -7,11 +7,11 @@ services:
     image: pgvector/pgvector:pg16
     container_name: robolearn_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
-      POSTGRES_DB: robolearn
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-robolearn}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_EXTERNAL:-127.0.0.1:5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/scripts/001-create-tables.sql:/docker-entrypoint-initdb.d/01-init.sql
@@ -19,7 +19,7 @@ services:
       - ./backend/scripts/003-seed-data.sql:/docker-entrypoint-initdb.d/03-seed.sql
       - ./backend/scripts/005-enable-pgvector.sql:/docker-entrypoint-initdb.d/05-pgvector.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,11 +34,11 @@ services:
     image: mongo:7
     container_name: robolearn_mongo
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: robolearn_password
-      MONGO_INITDB_DATABASE: robolearn_metrics
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DB:-robolearn_metrics}
     ports:
-      - "27017:27017"
+      - "${MONGO_PORT_EXTERNAL:-127.0.0.1:27017}:27017"
     volumes:
       - mongo_data:/data/db
       - ./backend/scripts/003-mongodb-init.js:/docker-entrypoint-initdb.d/init-db.js
@@ -58,7 +58,7 @@ services:
     image: redis:7-alpine
     container_name: robolearn_redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT_EXTERNAL:-127.0.0.1:6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -77,7 +77,7 @@ services:
     image: ollama/ollama:latest
     container_name: robolearn_ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT_EXTERNAL:-127.0.0.1:11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
     deploy:
@@ -98,44 +98,35 @@ services:
       dockerfile: Dockerfile
     container_name: robolearn_backend
     environment:
-      # App
-      APP_NAME: Robolearn API
-      DEBUG: "True"
-      NODE_ENV: development
+      APP_NAME: ${APP_NAME:-Robolearn API}
+      DEBUG: ${DEBUG:-false}
+      NODE_ENV: ${NODE_ENV:-production}
 
-      # Security
-      SECRET_KEY: your-secret-key-change-in-production-robolearn
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 10080
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
 
-      # PostgreSQL
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: robolearn
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-robolearn}
 
-      # MongoDB
       MONGODB_URL: mongodb://mongo:27017
-      MONGODB_DB: robolearn_metrics
+      MONGODB_DB: ${MONGODB_DB:-robolearn_metrics}
 
-      # Redis
       REDIS_URL: redis://redis:6379/0
 
-      # Ollama
       OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: qwen2.5-coder:1.5b
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:1.5b}
 
-      # Dialogflow — descomenta y completa para activar el chatbot
-      DIALOGFLOW_PROJECT_ID: ""
-      DIALOGFLOW_AGENT_ID: ""
-      # Ruta al JSON de clave de servicio de Google Cloud (dentro del contenedor)
-      GOOGLE_CREDENTIALS_PATH: /app/robolearn-key.json
+      DIALOGFLOW_PROJECT_ID: ${DIALOGFLOW_PROJECT_ID:-}
+      DIALOGFLOW_AGENT_ID: ${DIALOGFLOW_AGENT_ID:-}
+      GOOGLE_CREDENTIALS_PATH: ${GOOGLE_CREDENTIALS_PATH:-}
 
-      # CORS
-      CORS_ORIGINS: '["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]'
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT_EXTERNAL:-127.0.0.1:8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -144,16 +135,12 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Monta el código para hot-reload en desarrollo
       - ./backend:/app
-      # Monta la clave de servicio de Google (si existe)
-      - ./backend/robolearn-key.json:/app/robolearn-key.json
-      # Docker socket for sandboxing
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ${GOOGLE_CREDENTIALS_HOST_PATH:-./backend/robolearn-key.json}:${GOOGLE_CREDENTIALS_PATH:-/app/robolearn-key.json}
     restart: always
     networks:
       - robolearn_network
-    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   # ============================================
   # Next.js Frontend
@@ -164,11 +151,17 @@ services:
       dockerfile: Dockerfile
     container_name: robolearn_frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
-      NEXT_PUBLIC_JWT_EXPIRATION_DAYS: 7
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+      JWT_SECRET: ${JWT_SECRET}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-robolearn}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
+      MONGODB_DB: ${MONGODB_DB:-robolearn_metrics}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT_EXTERNAL:-127.0.0.1:3000}:3000"
     depends_on:
       - backend
     restart: always

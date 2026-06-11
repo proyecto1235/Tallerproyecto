@@ -4,7 +4,7 @@ import { query, queryOne, execute, type User, type UserRole } from "./db"
 import bcrypt from "bcryptjs"
 
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "your-secret-key-change-in-production"
+  process.env.JWT_SECRET
 )
 
 export interface JWTPayload {
