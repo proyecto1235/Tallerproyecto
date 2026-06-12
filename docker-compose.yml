@@ -25,7 +25,7 @@ services:
       retries: 5
     restart: always
     networks:
-      - robolearn_network
+      - internal_net
 
   # ============================================
   # MongoDB Database
@@ -49,7 +49,7 @@ services:
       retries: 5
     restart: always
     networks:
-      - robolearn_network
+      - internal_net
 
   # ============================================
   # Redis Cache (for AI caching + rate limiting)
@@ -61,14 +61,15 @@ services:
       - "${REDIS_PORT_EXTERNAL:-127.0.0.1:6379}:6379"
     volumes:
       - redis_data:/data
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}", "--appendonly", "yes"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
     restart: always
     networks:
-      - robolearn_network
+      - internal_net
 
   # ============================================
   # Ollama (Local LLM for tutor, RAG, generation)
@@ -86,7 +87,7 @@ services:
           memory: 4G
     restart: always
     networks:
-      - robolearn_network
+      - ai_net
     entrypoint: sh -c "ollama serve & sleep 3 && ollama pull qwen2.5-coder:1.5b && wait"
 
   # ============================================
@@ -116,6 +117,7 @@ services:
       MONGODB_DB: ${MONGODB_DB:-robolearn_metrics}
 
       REDIS_URL: redis://redis:6379/0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
 
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:1.5b}
@@ -139,7 +141,9 @@ services:
       - ${GOOGLE_CREDENTIALS_HOST_PATH:-./backend/robolearn-key.json}:${GOOGLE_CREDENTIALS_PATH:-/app/robolearn-key.json}
     restart: always
     networks:
-      - robolearn_network
+      - frontend_net
+      - internal_net
+      - ai_net
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   # ============================================
@@ -153,20 +157,13 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
-      JWT_SECRET: ${JWT_SECRET}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-robolearn}
-      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
-      MONGODB_DB: ${MONGODB_DB:-robolearn_metrics}
     ports:
       - "${FRONTEND_PORT_EXTERNAL:-127.0.0.1:3000}:3000"
     depends_on:
       - backend
     restart: always
     networks:
-      - robolearn_network
+      - frontend_net
 
 volumes:
   postgres_data:
@@ -175,5 +172,12 @@ volumes:
   ollama_data:
 
 networks:
-  robolearn_network:
+  frontend_net:
     driver: bridge
+    internal: false
+  internal_net:
+    driver: bridge
+    internal: true
+  ai_net:
+    driver: bridge
+    internal: false
