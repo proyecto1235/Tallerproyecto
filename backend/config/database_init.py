@@ -81,20 +81,16 @@ def execute_sql_file(file_path: Path) -> bool:
         cursor = conn.cursor()
         with open(file_path, 'r', encoding='utf-8') as f:
             sql_script = f.read()
-        statements = sql_script.split(';')
-        for statement in statements:
-            stmt = statement.strip()
-            if stmt:
-                try:
-                    cursor.execute(stmt)
-                except psycopg2.Error as e:
-                    msg = str(e).lower()
-                    if "conflict" in msg or "already exists" in msg:
-                        pass
-                    elif "syntax" in msg:
-                        pass
-                    else:
-                        print(f"  [WARN] {e}")
+        try:
+            cursor.execute(sql_script)
+        except psycopg2.Error as e:
+            msg = str(e).lower()
+            if "conflict" in msg or "already exists" in msg:
+                pass
+            elif "syntax" in msg:
+                pass
+            else:
+                print(f"  [WARN] {e}")
         conn.commit()
         cursor.close(); conn.close()
         print(f"[OK] Executed: {file_path.name}")
@@ -123,9 +119,9 @@ def initialize_database():
     """
     Initialize database:
     1. Create database
-    2. Create tables (001-create-tables.sql)
-    3. Create stored procedures (002-create-procedures.sql)
-    4. Seed data (003-seed-data.sql)
+    2. Create schema + procedures (001-init.sql)
+    3. Seed base data (002-seed-data.sql)
+    4. Seed massive data if empty (003-seed-massive.sql)
     5. Update module educational content
     """
     print("\n" + "="*50)
@@ -133,31 +129,16 @@ def initialize_database():
     print("="*50)
 
     # Step 1: Create database
-    print("\n[1/4] Checking/Creating Database...")
+    print("\n[1/5] Checking/Creating Database...")
     if not database_exists(settings.postgres_db):
-        print(f"  Creating database '{settings.postgres_db}'...")
         if not create_database(settings.postgres_db):
             print("  [ERROR] Failed to create database")
             return False
-    else:
-        print(f"  [OK] Database '{settings.postgres_db}' already exists")
 
-    # Step 2: Create tables
-    print("\n[2/4] Creating Tables...")
-    script_001 = find_script("001-create-tables.sql")
+    # Step 2: Create schema + stored procedures
+    print("\n[2/5] Creating Schema and Stored Procedures...")
+    script_001 = find_script("001-init.sql")
     if script_001:
-        if execute_sql_file(script_001):
-            print("  [OK] Tables created successfully")
-        else:
-            print("  [ERROR] Failed to create tables")
-            return False
-    else:
-        print("  [WARN] 001-create-tables.sql not found")
-
-    # Step 3: Create stored procedures
-    print("\n[3/4] Creating Stored Procedures...")
-    script_002 = find_script("002-create-procedures.sql")
-    if script_002:
         try:
             conn = psycopg2.connect(
                 host=settings.postgres_host, port=settings.postgres_port,
@@ -165,40 +146,78 @@ def initialize_database():
                 database=settings.postgres_db
             )
             cursor = conn.cursor()
-            with open(script_002, 'r', encoding='utf-8') as f:
+            with open(script_001, 'r', encoding='utf-8') as f:
                 sql_content = f.read()
             cursor.execute(sql_content)
             conn.commit()
             cursor.close()
             conn.close()
-            print("  [OK] Stored procedures created")
+            print("  [OK] Schema and procedures created")
         except Exception as e:
-            print(f"  [WARN] Stored procedures error (may already exist): {e}")
+            print(f"  [ERROR] Failed to create schema: {e}")
+            return False
     else:
-        print("  [WARN] 002-create-procedures.sql not found")
+        print("  [WARN] 001-init.sql not found")
 
-    # Step 4: Seed data
-    print("\n[4/4] Seeding Data...")
-    script_003 = find_script("003-seed-data.sql")
-    if script_003:
+    # Step 3: Seed base data
+    print("\n[3/5] Seeding Base Data...")
+    script_002 = find_script("002-seed-data.sql")
+    if script_002:
         try:
             if data_exists("users"):
                 print("  [OK] Data already exists (seed skipped)")
             else:
-                if execute_sql_file(script_003):
-                    print("  [OK] Data seeded successfully")
+                if execute_sql_file(script_002):
+                    print("  [OK] Base data seeded successfully")
                 else:
                     print("  [WARN] Seed had issues")
         except Exception as e:
             print(f"  Error: {e}")
     else:
-        print("  [WARN] 003-seed-data.sql not found")
+        print("  [WARN] 002-seed-data.sql not found")
 
-    print("\n[5/5] Updating Module Content...")
+    # Step 3b: Seed massive data (only in development, skipped in production)
+    print(f"\n[3b/5] Seeding Massive Test Data... (env: {settings.app_env})")
+    if settings.app_env == "production":
+        print("  [SKIP] Skipped in production (APP_ENV=production)")
+    else:
+        script_003 = find_script("003-seed-massive.sql")
+        if script_003:
+            if execute_sql_file(script_003):
+                print("  [OK] Massive data seeded")
+            else:
+                print("  [WARN] Massive seed had issues (may already exist)")
+        else:
+            print("  [WARN] 003-seed-massive.sql not found, skipping")
+
+    # Step 3c: Seed teacher data
+    print(f"\n[3c/5] Seeding Teacher Data...")
+    script_004 = find_script("004-seed-teacher-data.sql")
+    if script_004:
+        if execute_sql_file(script_004):
+            print("  [OK] Teacher data seeded")
+        else:
+            print("  [WARN] Teacher seed had issues")
+    else:
+        print("  [WARN] 004-seed-teacher-data.sql not found, skipping")
+
+    # Step 4: Update module educational content
+    print("\n[4/5] Updating Module Content...")
     try:
         _update_module_content_if_needed()
     except Exception as e:
         print(f"  [WARN] Content update: {e}")
+
+    # Step 5: Enable pgvector
+    print("\n[5/6] Enabling pgvector Extension...")
+    script_005 = find_script("005-enable-pgvector.sql")
+    if script_005:
+        if execute_sql_file(script_005):
+            print("  [OK] pgvector enabled")
+        else:
+            print("  [WARN] pgvector setup had issues")
+    else:
+        print("  [WARN] 005-enable-pgvector.sql not found")
 
     print("\n" + "="*50)
     print("[OK] Database initialization complete!")

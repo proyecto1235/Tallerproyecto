@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,7 +20,6 @@ export default function ClassesPage() {
   const [pendingRequests, setPendingRequests] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [requestingId, setRequestingId] = useState<number | null>(null)
-  const requestingRef = useRef<number | null>(null)
 
   useEffect(() => {
     loadData()

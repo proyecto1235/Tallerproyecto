@@ -70,6 +70,16 @@ class AICache:
             if cursor == 0:
                 break
 
+    async def get(self, key: str) -> Optional[str]:
+        r = await self._get_redis()
+        if r is None: return None
+        return await r.get(key)
+
+    async def set(self, key: str, value: str, ttl: int = 60):
+        r = await self._get_redis()
+        if r is None: return
+        await r.setex(key, ttl, value)
+
     async def close(self):
         if self._redis:
             await self._redis.close()

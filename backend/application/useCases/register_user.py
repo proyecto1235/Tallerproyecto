@@ -1,8 +1,6 @@
 from domain.entities.user import User, UserRole, TeacherRequestStatus
 from domain.ports.user_repository import UserRepository
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from infrastructure.adapters.output.password_hasher import hash_password
 
 class RegisterUserUseCase:
     """Use case for user registration"""
@@ -31,7 +29,7 @@ class RegisterUserUseCase:
             return {"success": False, "error": "El email ya está registrado"}
         
         # Hash password
-        password_hash = pwd_context.hash(password)
+        password_hash = hash_password(password)
         
         # Create user entity
         if request_teacher:

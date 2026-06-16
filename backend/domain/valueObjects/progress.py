@@ -20,7 +20,7 @@ class Progress:
         
         self.user_id = user_id
         self.module_id = module_id
-        self.percentage = percentage
+        self.percentage = (completed_exercises / total_exercises * 100) if total_exercises > 0 else percentage
         self.completed_exercises = completed_exercises
         self.total_exercises = total_exercises
         self.points_earned = points_earned

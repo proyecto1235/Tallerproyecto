@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { MessageCircle, X, Send, Bot, User, Brain, Loader2, ChevronDown } from "lucide-react"
+import { MessageCircle, X, Send, Bot, User, Brain, Loader2, ChevronDown, AlertTriangle, WifiOff } from "lucide-react"
+import { toast } from "sonner"
 
 interface Message {
   id: string
@@ -12,6 +14,8 @@ interface Message {
   timestamp: number
   source?: string
 }
+
+type ServiceState = "checking" | "available" | "dialogflow_only" | "ollama_only" | "none"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 const STORAGE_KEY = "robolearn_chat_history"
@@ -37,15 +41,27 @@ const INITIAL_BOT_MESSAGE: Message = {
   timestamp: Date.now()
 }
 
+function serviceStateLabel(state: ServiceState): string {
+  switch (state) {
+    case "dialogflow_only": return "solo dialogflow esta disponible"
+    case "ollama_only": return "solo IA local disponible"
+    case "none": return "ningun servicio de IA disponible"
+    default: return ""
+  }
+}
+
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([INITIAL_BOT_MESSAGE])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [unread, setUnread] = useState(1)
+  const [connectionError, setConnectionError] = useState(false)
+  const [serviceState, setServiceState] = useState<ServiceState>("checking")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const hasHydrated = useRef(false)
+  const checkedStatus = useRef(false)
 
   useEffect(() => {
     if (hasHydrated.current) return
@@ -73,10 +89,25 @@ export function ChatWidget() {
   useEffect(() => {
     if (isOpen) {
       setUnread(0)
+      setConnectionError(false)
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
       setTimeout(() => inputRef.current?.focus(), 300)
+      checkServiceStatus()
     }
   }, [isOpen, messages])
+
+  const checkServiceStatus = async () => {
+    if (checkedStatus.current) return
+    checkedStatus.current = true
+    try {
+      const res = await fetch(`${API_URL}/chatbot/status`)
+      if (!res.ok) throw new Error("Status check failed")
+      const data = await res.json()
+      setServiceState(data.best_available || "none")
+    } catch {
+      setServiceState("none")
+    }
+  }
 
   const sendMessage = async () => {
     const text = input.trim()
@@ -107,6 +138,7 @@ export function ChatWidget() {
       })
 
       const data = await res.json()
+      const source = data.source || "tutor"
       const botText = data.message || data.response || "Lo siento, no pude procesar tu mensaje."
 
       const botMsg: Message = {
@@ -114,10 +146,15 @@ export function ChatWidget() {
         role: "bot",
         text: botText,
         timestamp: Date.now(),
-        source: data.source || "tutor",
+        source,
       }
       setMessages(prev => [...prev, botMsg])
     } catch {
+      setConnectionError(true)
+      toast.error("Error de conexión", {
+        description: "No se pudo conectar con el servidor. Verifica que el backend esté funcionando.",
+        duration: 5000,
+      })
       const botMsg: Message = {
         id: generateId(),
         role: "bot",
@@ -144,20 +181,47 @@ export function ChatWidget() {
     setIsOpen(false)
   }
 
+  const isDisabled = serviceState === "none"
+  const showDegradedBanner = serviceState === "dialogflow_only" || serviceState === "ollama_only"
+
+  const buttonStyle = connectionError
+    ? "bg-destructive text-destructive-foreground animate-pulse"
+    : isDisabled && !connectionError
+    ? "bg-muted-foreground/50 text-muted cursor-not-allowed"
+    : showDegradedBanner
+    ? "bg-amber-500 text-white"
+    : "bg-primary text-primary-foreground hover:bg-primary/90"
+
   return (
     <>
       {/* Chat Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-300 hover:scale-110 active:scale-95"
+        onClick={() => !isDisabled && setIsOpen(!isOpen)}
+        className={`fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 ${buttonStyle}`}
         aria-label="Abrir chat"
+        title={isDisabled ? "Servicio de IA no disponible" : "Abrir chat"}
       >
         {isOpen ? (
           <X className="h-6 w-6" />
         ) : (
           <>
             <MessageCircle className="h-6 w-6" />
-            {unread > 0 && (
+            {connectionError && (
+              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background animate-pulse">
+                !
+              </span>
+            )}
+            {isDisabled && !connectionError && (
+              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+                <WifiOff className="h-3 w-3" />
+              </span>
+            )}
+            {showDegradedBanner && !connectionError && !isDisabled && (
+              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-700 text-[10px] font-bold text-white">
+                !
+              </span>
+            )}
+            {unread > 0 && !connectionError && !showDegradedBanner && !isDisabled && (
               <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground animate-pulse">
                 {unread}
               </span>
@@ -176,13 +240,7 @@ export function ChatWidget() {
         {/* Header */}
         <div className="flex items-center justify-between rounded-t-2xl border-b border-border bg-primary/5 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-              <Bot className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">Asistente RoboLearn</p>
-              <p className="text-[10px] text-muted-foreground">Online · Respondo al instante</p>
-            </div>
+            <Image src="/logo.svg" alt="RoboLearn" width={90} height={22} />
           </div>
           <button
             onClick={clearChat}
@@ -193,8 +251,16 @@ export function ChatWidget() {
           </button>
         </div>
 
+        {/* Service degraded banner */}
+        {showDegradedBanner && (
+          <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>{serviceStateLabel(serviceState)}</span>
+          </div>
+        )}
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ height: "400px" }}>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ height: showDegradedBanner ? "376px" : "400px" }}>
           {messages.map(msg => (
             <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               <div
@@ -204,13 +270,21 @@ export function ChatWidget() {
               >
                 <div
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full mt-1 ${
-                    msg.role === "user" ? "bg-primary/10" : msg.source === "ollama" ? "bg-purple-500/10" : "bg-secondary/10"
+                    msg.role === "user" ? "bg-primary/10"
+                    : msg.source === "ollama" ? "bg-purple-500/10"
+                    : msg.source === "dialogflow" ? "bg-blue-500/10"
+                    : msg.source === "ai_unavailable" ? "bg-amber-500/10"
+                    : "bg-secondary/10"
                   }`}
                 >
                   {msg.role === "user" ? (
                     <User className="h-3.5 w-3.5 text-primary" />
                   ) : msg.source === "ollama" ? (
                     <Brain className="h-3.5 w-3.5 text-purple-500" />
+                  ) : msg.source === "dialogflow" ? (
+                    <Bot className="h-3.5 w-3.5 text-blue-500" />
+                  ) : msg.source === "ai_unavailable" ? (
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                   ) : (
                     <Bot className="h-3.5 w-3.5 text-secondary" />
                   )}
@@ -221,6 +295,10 @@ export function ChatWidget() {
                       ? "bg-primary text-primary-foreground rounded-tr-md"
                       : msg.source === "ollama"
                       ? "bg-purple-500/10 text-foreground border border-purple-500/20 rounded-tl-md"
+                      : msg.source === "dialogflow"
+                      ? "bg-blue-500/10 text-foreground border border-blue-500/20 rounded-tl-md"
+                      : msg.source === "ai_unavailable"
+                      ? "bg-amber-500/10 text-foreground border border-amber-500/20 rounded-tl-md"
                       : "bg-muted text-foreground rounded-tl-md"
                   }`}
                 >
@@ -228,6 +306,18 @@ export function ChatWidget() {
                     <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-500 mb-1.5 uppercase tracking-wide">
                       <Brain className="h-3 w-3" />
                       IA Local
+                    </span>
+                  )}
+                  {msg.source === "dialogflow" && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-500 mb-1.5 uppercase tracking-wide">
+                      <Bot className="h-3 w-3" />
+                      Dialogflow
+                    </span>
+                  )}
+                  {msg.source === "ai_unavailable" && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-500 mb-1.5 uppercase tracking-wide">
+                      <AlertTriangle className="h-3 w-3" />
+                      IA no disponible
                     </span>
                   )}
                   <div>{msg.text}</div>
@@ -261,14 +351,14 @@ export function ChatWidget() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Escribe tu mensaje..."
-              disabled={isLoading}
+              placeholder={isDisabled ? "Servicio no disponible" : "Escribe tu mensaje..."}
+              disabled={isLoading || isDisabled}
               className="flex-1 rounded-xl border-border bg-muted/50 text-sm"
             />
             <Button
               type="submit"
               size="icon"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || isDisabled}
               className="h-10 w-10 shrink-0 rounded-xl"
             >
               {isLoading ? (

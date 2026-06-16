@@ -1,4 +1,4 @@
-import { Trophy, Star, Shield, Medal, Zap, Award, Target, Flame } from "lucide-react"
+import * as Icons from "lucide-react"
 
 export interface AchievementBadgeProps {
   id: string
@@ -19,18 +19,18 @@ export function AchievementBadge({
   rarity = "common"
 }: AchievementBadgeProps) {
   
-  const icons = {
-    trophy: Trophy,
-    star: Star,
-    shield: Shield,
-    medal: Medal,
-    zap: Zap,
-    award: Award,
-    target: Target,
-    flame: Flame
+  const icons: Record<string, typeof Icons.Trophy> = {
+    trophy: Icons.Trophy,
+    star: Icons.Star,
+    shield: Icons.Shield,
+    medal: Icons.Medal,
+    zap: Icons.Zap,
+    award: Icons.Award,
+    target: Icons.Target,
+    flame: Icons.Flame
   }
 
-  const IconComponent = icons[icon] || Trophy
+  const IconComponent = icons[icon] || Icons.Trophy
 
   const rarityStyles = {
     common: "from-slate-200 to-slate-400 border-slate-300 text-slate-700",

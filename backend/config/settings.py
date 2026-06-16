@@ -1,61 +1,55 @@
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict, field_validator
 from typing import Optional
+from pathlib import Path
 
 class Settings(BaseSettings):
     model_config = ConfigDict(
-        env_file=".env",
+        env_file=str(Path(__file__).parent.parent / ".env"),
+        env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore"  # Ignora campos no definidos del .env
+        extra="ignore"
     )
 
-    # App
     app_name: str = "Robolearn API"
     app_version: str = "1.0.0"
     debug: bool = False
-    node_env: Optional[str] = "development"  # Agregado para .env
+    app_env: Optional[str] = "development"
 
-    # Security
-    secret_key: str = "your-secret-key-change-in-production-robolearn"
+    secret_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 10080
 
-    # PostgreSQL
     postgres_user: str = "postgres"
     postgres_password: str = "123123123"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "robolearn"
+    db_pool_min: int = 5
+    db_pool_max: int = 50
 
-    # MongoDB
-    mongodb_url: str = "mongodb://mongo:27017"
+    mongodb_url: str = "mongodb://localhost:27017"
     mongodb_db: str = "robolearn_metrics"
 
-    # Dialogflow
-    dialogflow_project_id: Optional[str] = "roboloarnchatbot-vpif"
-    # dialogflow_agent_id: Optional[str] = 
-    google_credentials_path: Optional[str] = "./robolearn-key.json"
+    dialogflow_project_id: Optional[str] = None
+    dialogflow_agent_id: Optional[str] = None
+    google_credentials_path: Optional[str] = None
 
-    # AI / OpenAI
-    # openai_api_key: Optional[str] = None
-    # openai_model: str = "gpt-4o-mini"
+    redis_url: str = "redis://localhost:6379/0"
 
-    # Redis
-    redis_url: str = "redis://redis:6379/0"
-
-    # Ollama / Local LLM
     ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:3b"
+    ollama_model: str = "qwen2.5-coder:1.5b"
 
-    # CORS
-    cors_origins: list = [
-        "*"
-    ]
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-3.5-turbo"
+
+    ml_model_dir: str = "models"
+
+    cors_origins: list = ["*"]
 
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
-        """Parse CORS origins from string or list format"""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return v

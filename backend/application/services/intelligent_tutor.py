@@ -5,8 +5,8 @@ import textwrap
 
 
 class IntelligentTutor:
-    def __init__(self, predictor=None):
-        self.predictor = predictor
+    def __init__(self, orchestrator=None):
+        self.orchestrator = orchestrator
         self._concept_explanations = self._build_concept_map()
         self._greeting_patterns = ["hola", "buenos días", "buenas tardes", "hey", "saludos", "qué tal", "quiubo"]
 

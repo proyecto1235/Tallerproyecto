@@ -18,7 +18,8 @@ class AIServiceImpl(AIService):
     
     def _load_ml_model(self):
         """Load or initialize Scikit-learn model"""
-        model_path = "models/recommendation_model.pkl"
+        import os
+        model_path = os.path.join(settings.ml_model_dir, "recommendation_model.pkl")
         if os.path.exists(model_path):
             self.ml_model = joblib.load(model_path)
         else:
@@ -89,14 +90,10 @@ class AIServiceImpl(AIService):
         Returns prediction score between 0.0 and 1.0
         """
         try:
-            from infrastructure.adapters.output.mongo.behavioral_repository import BehavioralRepository
-            from application.services.student_predictor import StudentPredictor
-
-            behavioral = BehavioralRepository()
-            profile = await behavioral.get_student_behavioral_profile(student_id)
-            predictor = StudentPredictor()
-            metrics = await predictor.predict_metrics(profile)
-            return metrics.get("performance_score", 0.5)
+            from application.services.ml.orchestrator import MLOrchestrator
+            orchestrator = MLOrchestrator()
+            result = orchestrator.predict_student(student_id)
+            return result.get("performance", 0.5)
         except Exception as e:
             print(f"Error predicting performance: {e}")
             try:
@@ -210,7 +207,8 @@ class AIServiceImpl(AIService):
         try:
             self.ml_model.fit(training_data)
             # Save the model
-            os.makedirs("models", exist_ok=True)
-            joblib.dump(self.ml_model, "models/recommendation_model.pkl")
+            model_dir = settings.ml_model_dir
+            os.makedirs(model_dir, exist_ok=True)
+            joblib.dump(self.ml_model, os.path.join(model_dir, "recommendation_model.pkl"))
         except Exception as e:
             print(f"Error training model: {e}")

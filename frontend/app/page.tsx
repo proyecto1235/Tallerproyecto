@@ -1,3 +1,4 @@
+import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -21,10 +22,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-              <Code className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold text-foreground">RoboLearn</span>
+            <Image src="/logo.svg" alt="RoboLearn" width={130} height={32} priority />
           </Link>
           <nav className="hidden items-center gap-6 md:flex">
             <Link href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -263,12 +261,7 @@ export default function HomePage() {
       <footer className="border-t py-8">
         <div className="container mx-auto px-4">
           <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <Code className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="font-semibold text-foreground">RoboLearn</span>
-            </div>
+            <Image src="/logo.svg" alt="RoboLearn" width={100} height={24} />
             <p className="text-sm text-muted-foreground">
               2024 RoboLearn. Plataforma educativa de programacion.
             </p>

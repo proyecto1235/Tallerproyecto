@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -38,6 +39,7 @@ const studentLinks = [
   { href: "/dashboard/exercises", label: "Ejercicios", icon: Code },
   { href: "/dashboard/challenges", label: "Retos", icon: Trophy },
   { href: "/dashboard/classes", label: "Mis Clases", icon: Users },
+  { href: "/dashboard/analytics/mis-metricas", label: "Mis Metricas", icon: BarChart3 },
   { href: "/dashboard/achievements", label: "Logros", icon: Star },
   { href: "/dashboard/settings", label: "Ajustes", icon: Settings },
 ]
@@ -97,10 +99,7 @@ export function Sidebar({ user }: SidebarProps) {
       {/* Mobile header */}
       <div className="fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b bg-background px-4 lg:hidden">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Code className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <span className="font-bold text-foreground">RoboLearn</span>
+          <Image src="/logo.svg" alt="RoboLearn" width={100} height={24} priority />
         </Link>
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
@@ -126,11 +125,8 @@ export function Sidebar({ user }: SidebarProps) {
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
-            <Code className="h-5 w-5 text-sidebar-primary-foreground" />
-          </div>
-          <span className="text-xl font-bold">RoboLearn</span>
+        <div className="flex h-16 items-center border-b border-sidebar-border px-4">
+          <Image src="/logo.svg" alt="RoboLearn" width={130} height={32} priority />
         </div>
 
         {/* User info */}

@@ -1,15 +1,25 @@
 "use client"
 
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { Loader2 } from "lucide-react"
+import { ErrorBoundary } from "@/components/error-boundary"
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const router = useRouter()
   const { user, isLoading, isAuthenticated } = useAuth()
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push("/login")
+    }
+  }, [isLoading, isAuthenticated, router])
 
   if (isLoading) {
     return (
@@ -31,7 +41,9 @@ export default function DashboardLayout({
       <Sidebar user={user} />
       <main className="lg:pl-64">
         <div className="pt-16 lg:pt-0">
-          <div className="p-4 md:p-6 lg:p-8">{children}</div>
+          <div className="p-4 md:p-6 lg:p-8">
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </div>
         </div>
       </main>
     </div>

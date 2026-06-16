@@ -37,5 +37,5 @@ class EmbeddingService:
             if last_space > start:
                 end = last_space
             chunks.append(text[start:end])
-            start = end - overlap
+            start = max(start + 1, end - overlap)
         return chunks

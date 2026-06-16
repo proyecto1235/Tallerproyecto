@@ -2,9 +2,10 @@ from fastapi import FastAPI, Depends, HTTPException, status, Response, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, List
 import os
 import sys
 
@@ -20,8 +21,6 @@ from infrastructure.adapters.output.postgres.enrollment_repository_impl import E
 from infrastructure.adapters.output.postgres.teacher_repository_impl import TeacherRepositoryImpl
 from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
 from application.services.ai_service_impl import AIServiceImpl
-from application.services.ai_recommender import RecommendationService
-from application.services.student_predictor import StudentPredictor
 from application.services.intelligent_tutor import IntelligentTutor
 from application.services.sandbox_service import SandboxService
 from application.services.llm_service import LLMService
@@ -29,7 +28,6 @@ from application.services.embedding_service import EmbeddingService
 from application.services.rag_service import RAGService
 from application.services.ai_tutor_service import AITutorService
 from infrastructure.adapters.output.redis.cache import AICache
-from infrastructure.adapters.output.redis.rate_limiter import RateLimiter
 from application.services.exercise_generator_service import ExerciseGeneratorService
 from infrastructure.adapters.output.mongo.behavioral_repository import BehavioralRepository
 from application.useCases.register_user import RegisterUserUseCase
@@ -37,7 +35,8 @@ from application.useCases.get_recommendations import GetRecommendationsUseCase
 from application.useCases.enroll_student import EnrollStudentUseCase
 from application.useCases.teacher_dashboard import TeacherDashboardUseCase
 from application.useCases.generate_ai_alerts import GenerateAIAlertsUseCase
-from domain.entities.user import User, UserRole
+from application.services.analytics.analytics_router import analytics_router
+from domain.entities.user import UserRole
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -224,9 +223,9 @@ async def lifespan(app: FastAPI):
         cred_path = os.path.abspath(settings.google_credentials_path)
         if os.path.exists(cred_path):
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-            print(f"✅ Google credentials loaded from: {cred_path}")
+            print(f"[OK] Google credentials loaded from: {cred_path}")
         else:
-            print(f"⚠️ Google credentials file not found at: {cred_path}")
+            print(f"[WARN] Google credentials file not found at: {cred_path}")
     
     # Initialize database (create if needed, migrate tables, seed data)
     initialize_database()
@@ -268,6 +267,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ============================================
+# Mount Routers
+# ============================================
+
+app.include_router(analytics_router)
 
 # ============================================
 # Utilities
@@ -383,13 +388,13 @@ teacher_repository = TeacherRepositoryImpl()
 event_repository = EventRepository()
 ai_service = AIServiceImpl()
 behavioral_repo = BehavioralRepository()
-student_predictor = StudentPredictor()
-intelligent_tutor = IntelligentTutor(predictor=student_predictor)
+from application.services.ml.orchestrator import MLOrchestrator
+ml_orchestrator = MLOrchestrator()
+intelligent_tutor = IntelligentTutor(orchestrator=ml_orchestrator)
 
 # New architecture services
 sandbox_service = SandboxService()
 ai_cache = AICache(redis_url=settings.redis_url)
-rate_limiter = RateLimiter(redis_url=settings.redis_url)
 llm_service = LLMService(
     ollama_url=settings.ollama_url,
     model=settings.ollama_model,
@@ -444,7 +449,7 @@ async def register(request: RegisterRequest, response: Response):
         key="auth-token",
         value=token,
         httponly=True,
-        secure=settings.node_env == "production",
+        secure=settings.app_env == "production",
         samesite="lax",
         max_age=60 * 60 * 24 * 7,  # 7 days
     )
@@ -488,7 +493,7 @@ async def login(request: LoginRequest, response: Response):
         key="auth-token",
         value=token,
         httponly=True,
-        secure=settings.node_env == "production",
+        secure=settings.app_env == "production",
         samesite="lax",
         max_age=60 * 60 * 24 * 7,
     )
@@ -562,7 +567,6 @@ async def update_profile(
         user.bio = request.bio
         
     try:
-        from infrastructure.adapters.output.postgres.connection import PostgresConnection
         query = "UPDATE users SET full_name = %s, email = %s, password_hash = %s, avatar_url = %s, bio = %s WHERE id = %s"
         with PostgresConnection.get_cursor() as cursor:
             cursor.execute(query, (user.full_name, user.email, user.password_hash, user.avatar_url, user.bio, user.id))
@@ -600,7 +604,6 @@ async def get_user(user_id: int):
 @app.get("/api/users/search", tags=["Users"])
 async def search_users(q: str = ""):
     """Search users by name"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     if not q:
         return {"success": True, "users": []}
     query = """
@@ -620,6 +623,61 @@ async def search_users(q: str = ""):
                 "points": row[6], "streak_days": row[7]
             })
     return {"success": True, "users": users}
+
+@app.get("/api/users/{user_id}/classes", tags=["Users"])
+async def get_user_classes(user_id: int):
+    """Get classes for a user: enrolled courses for students, taught courses for teachers"""
+    user = await user_repository.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role.value == "teacher":
+        query = """
+            SELECT c.id, c.title, c.description, c.category, c.difficulty,
+                   c.is_published,
+                   COUNT(DISTINCT cm.id) as module_count,
+                   COUNT(DISTINCT ce.id) as student_count
+            FROM classes c
+            LEFT JOIN class_modules cm ON cm.class_id = c.id
+            LEFT JOIN class_enrollments ce ON ce.class_id = c.id AND ce.status = 'approved'
+            WHERE c.teacher_id = %s
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        """
+        classes = []
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute(query, (user_id,))
+            for row in cursor.fetchall():
+                classes.append({
+                    "id": row[0], "title": row[1], "description": row[2],
+                    "category": row[3], "difficulty": row[4],
+                    "is_published": row[5],
+                    "module_count": row[6], "student_count": row[7],
+                })
+        return {"success": True, "classes": classes, "role": "teacher"}
+
+    # Student: enrolled classes
+    query = """
+        SELECT c.id, c.title, c.description, c.category, c.difficulty,
+               u.full_name as teacher_name, ce.status as enrollment_status,
+               ce.enrolled_at
+        FROM class_enrollments ce
+        JOIN classes c ON ce.class_id = c.id
+        JOIN users u ON c.teacher_id = u.id
+        WHERE ce.student_id = %s AND ce.status = 'approved'
+        ORDER BY ce.enrolled_at DESC
+    """
+    classes = []
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute(query, (user_id,))
+        for row in cursor.fetchall():
+            classes.append({
+                "id": row[0], "title": row[1], "description": row[2],
+                "category": row[3], "difficulty": row[4],
+                "teacher_name": row[5], "enrollment_status": row[6],
+                "enrolled_at": row[7].isoformat() if row[7] else None,
+            })
+    return {"success": True, "classes": classes, "role": "student"}
 
 # ============================================
 # Routes - Recommendations (AI/ML)
@@ -688,98 +746,17 @@ async def get_student_analytics(
 ):
     """Get full predictive metrics for a specific student"""
     profile = await behavioral_repo.get_student_behavioral_profile(student_id)
-    metrics = await student_predictor.predict_metrics(profile)
-    insights = await student_predictor.get_insights(profile)
 
     return {
         "success": True,
         "student_id": student_id,
         "behavioral_profile": profile,
-        "predictions": metrics,
-        "insights": insights,
-    }
-
-@app.get("/api/analytics/class/predictions", tags=["AI Analytics"])
-async def get_class_predictions(
-    days: int = 30,
-    module_id: Optional[int] = None,
-    token_data: TokenData = Depends(verify_teacher),
-):
-    """Get predictions for all students in the teacher's classes"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
-
-    with PostgresConnection.get_cursor() as cursor:
-        if module_id:
-            cursor.execute("""
-                SELECT DISTINCT e.student_id FROM enrollments e
-                JOIN modules m ON e.module_id = m.id
-                WHERE m.teacher_id = %s AND e.module_id = %s
-                  AND e.status IN ('active', 'completed')
-            """, (token_data.user_id, module_id))
-        else:
-            cursor.execute("""
-                SELECT DISTINCT student_id FROM (
-                    SELECT e.student_id FROM enrollments e
-                    JOIN modules m ON e.module_id = m.id
-                    WHERE m.teacher_id = %s AND e.status IN ('active', 'completed')
-                    UNION
-                    SELECT ce.student_id FROM class_enrollments ce
-                    JOIN classes c ON ce.class_id = c.id
-                    WHERE c.teacher_id = %s AND ce.status = 'approved'
-                ) AS all_students
-            """, (token_data.user_id, token_data.user_id))
-        student_rows = cursor.fetchall()
-
-    if not student_rows:
-        return {"success": True, "students": [], "summary": {}}
-
-    results = []
-    for (sid,) in student_rows:
-        try:
-            profile = await behavioral_repo.get_student_behavioral_profile(sid)
-            metrics = await student_predictor.predict_metrics(profile)
-            results.append({
-                "student_id": sid,
-                **metrics,
-            })
-        except Exception as e:
-            print(f"[WARN] Failed to predict for student {sid}: {e}")
-            results.append({
-                "student_id": sid,
-                "dropout_risk": 0.0,
-                "performance_score": 0.0,
-                "engagement_score": 0.0,
-                "frustration_level": 0,
-                "performance_label": "unknown",
-                "dropout_risk_label": "low",
-                "frustration_label": "baja",
-            })
-
-    try:
-        classification = await student_predictor.classify_students([
-            await behavioral_repo.get_student_behavioral_profile(r["student_id"])
-            for r in results
-        ])
-    except Exception as e:
-        print(f"[WARN] classify_students failed: {e}")
-        classification = {"at_risk": [], "excellent": []}
-
-    avg_dropout = sum(r["dropout_risk"] for r in results) / len(results) if results else 0
-    avg_performance = sum(r["performance_score"] for r in results) / len(results) if results else 0
-    avg_engagement = sum(r["engagement_score"] for r in results) / len(results) if results else 0
-
-    return {
-        "success": True,
-        "students": results,
-        "summary": {
-            "total_students": len(results),
-            "avg_dropout_risk": round(avg_dropout, 4),
-            "avg_performance": round(avg_performance, 4),
-            "avg_engagement": round(avg_engagement, 4),
-            "at_risk_count": len(classification["at_risk"]),
-            "excellent_count": len(classification["excellent"]),
+        "predictions": {
+            "engagement": profile.get("engagement_score", 0.5),
+            "performance": profile.get("performance_score", 0.5),
+            "dropout_risk": profile.get("dropout_risk", 0.1),
         },
-        "classification": classification,
+        "insights": [],
     }
 
 @app.get("/api/analytics/student/{student_id}/risk-factors", tags=["AI Analytics"])
@@ -789,7 +766,6 @@ async def get_student_risk_factors(
 ):
     """Get detailed risk factors for a student"""
     profile = await behavioral_repo.get_student_behavioral_profile(student_id)
-    insights = await student_predictor.get_insights(profile)
 
     risk_factors = []
     if profile["session_days_30d"] < 3:
@@ -827,7 +803,7 @@ async def get_student_risk_factors(
         "success": True,
         "student_id": student_id,
         "risk_factors": risk_factors,
-        "insights": insights,
+        "insights": [],
         "profile_summary": {
             k: profile[k] for k in [
                 "session_days_30d", "total_time_minutes_30d",
@@ -842,37 +818,50 @@ async def get_analytics_dashboard(
     days: int = 30,
     token_data: TokenData = Depends(verify_teacher),
 ):
-    """Get the full analytics dashboard for teachers"""
+    """Get the full analytics dashboard for teachers (loads partial data if predictions not ready)"""
+    from application.services.analytics.analytics_router import get_class_predictions
     class_preds = None
     try:
-        class_preds = await get_class_predictions(days=days, token_data=token_data)
+        class_preds = await asyncio.wait_for(
+            get_class_predictions(days=days, token_data=token_data),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        print("[WARN] get_class_predictions timed out – triggering background warm")
+        class_preds = {"success": True, "students": [], "summary": {}, "processing": True}
+        _try_warm_predictions(token_data.user_id)
     except Exception as e:
         print(f"[WARN] get_class_predictions failed: {e}")
         class_preds = {"success": True, "students": [], "summary": {}}
 
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     daily_activity = []
     frustration_trend = []
     try:
         db = await behavioral_repo.get_db()
         if db is not None:
             week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-            daily_activity = list(db.behavioral_events.aggregate([
-                {"$match": {"timestamp": {"$gte": week_ago}}},
-                {"$group": {
-                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"_id": 1}},
-            ]))
-            frustration_trend = list(db.frustration_signals.aggregate([
-                {"$match": {"timestamp": {"$gte": week_ago}}},
-                {"$group": {
-                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"_id": 1}},
-            ]))
+            daily_activity = await asyncio.wait_for(
+                db.behavioral_events.aggregate([
+                    {"$match": {"timestamp": {"$gte": week_ago}}},
+                    {"$group": {
+                        "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                        "count": {"$sum": 1},
+                    }},
+                    {"$sort": {"_id": 1}},
+                ]).to_list(length=100), timeout=3.0
+            )
+            frustration_trend = await asyncio.wait_for(
+                db.frustration_signals.aggregate([
+                    {"$match": {"timestamp": {"$gte": week_ago}}},
+                    {"$group": {
+                        "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                        "count": {"$sum": 1},
+                    }},
+                    {"$sort": {"_id": 1}},
+                ]).to_list(length=100), timeout=3.0
+            )
+    except asyncio.TimeoutError:
+        print("[WARN] MongoDB aggregates timed out")
     except Exception as e:
         print(f"[WARN] MongoDB analytics fetch: {e}")
 
@@ -882,6 +871,96 @@ async def get_analytics_dashboard(
         "daily_activity": daily_activity,
         "frustration_trend": frustration_trend,
     }
+
+
+def _try_warm_predictions(teacher_id: int):
+    """Start background prediction warm-up with parallel threads."""
+    if getattr(_try_warm_predictions, "_running", False):
+        return
+    _try_warm_predictions._running = True
+
+    async def _warm():
+        try:
+            with PostgresConnection.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT student_id FROM (
+                        SELECT e.student_id FROM enrollments e
+                        JOIN modules m ON e.module_id = m.id
+                        WHERE m.teacher_id = %s AND e.status IN ('active', 'completed')
+                        UNION
+                        SELECT ce.student_id FROM class_enrollments ce
+                        JOIN classes c ON ce.class_id = c.id
+                        WHERE c.teacher_id = %s AND ce.status = 'approved'
+                    ) AS all_students
+                """, (teacher_id, teacher_id))
+                student_ids = [r[0] for r in cursor.fetchall()]
+            uncached = [s for s in student_ids if s not in ml_orchestrator._prediction_cache]
+            if not uncached:
+                return
+
+            print(f"[Warm] Caching {len(uncached)} students...")
+            ml_orchestrator.predict_batch(uncached)
+            print(f"[Warm] Cached {len(uncached)} students")
+        except Exception as e:
+            print(f"[Warm] Error: {e}")
+        finally:
+            _try_warm_predictions._running = False
+
+    asyncio.create_task(_warm())
+
+
+@app.get("/api/analytics/predictions/status", tags=["AI Analytics"])
+async def get_predictions_status(
+    token_data: TokenData = Depends(verify_teacher),
+):
+    """Check cache status of ML predictions"""
+    return {
+        "success": True,
+        **ml_orchestrator.cache_status()
+    }
+
+
+@app.post("/api/analytics/predictions/prewarm", tags=["AI Analytics"])
+async def prewarm_predictions(
+    token_data: TokenData = Depends(verify_teacher),
+):
+    """Pre-compute predictions for all students in background (non-blocking)"""
+    with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("""
+            SELECT DISTINCT student_id FROM (
+                SELECT e.student_id FROM enrollments e
+                JOIN modules m ON e.module_id = m.id
+                WHERE m.teacher_id = %s AND e.status IN ('active', 'completed')
+                UNION
+                SELECT ce.student_id FROM class_enrollments ce
+                JOIN classes c ON ce.class_id = c.id
+                WHERE c.teacher_id = %s AND ce.status = 'approved'
+            ) AS all_students
+        """, (token_data.user_id, token_data.user_id))
+        student_ids = [r[0] for r in cursor.fetchall()]
+
+    cached = len([s for s in student_ids if s in ml_orchestrator._prediction_cache])
+    total = len(student_ids)
+    remaining = total - cached
+
+    if remaining > 0:
+        asyncio.create_task(_warm_predictions_async(student_ids))
+
+    return {
+        "success": True,
+        "total_students": total,
+        "cached": cached,
+        "processing": remaining,
+        "message": f"Procesando {remaining} estudiantes en segundo plano..."
+    }
+
+
+async def _warm_predictions_async(student_ids: List[int]):
+    """Background task: compute predictions for uncached students"""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, ml_orchestrator.predict_batch, student_ids)
+    print(f"[MLOrchestrator] Background warm: cached {len(ml_orchestrator._prediction_cache)} students")
 
 # ============================================
 # Routes - Intelligent Tutor (Conversational AI for Students)
@@ -899,8 +978,6 @@ async def tutor_ask(
     student_profile = None
     if user_id:
         student_profile = await behavioral_repo.get_student_behavioral_profile(user_id)
-        metrics = await student_predictor.predict_metrics(student_profile)
-        student_profile.update(metrics)
 
     dialogflow_result = None
     try:
@@ -927,6 +1004,11 @@ async def tutor_ask(
             "student_level": result.get("student_level", "beginner"),
             "timestamp": datetime.now(timezone.utc),
         })
+        await behavioral_repo.log_exercise_action(
+            user_id or 0, request.exercise_id or 0, request.module_id or 0,
+            "tutor_ask", {"intent": result.get("intent")}
+        )
+        await behavioral_repo.update_engagement_score(user_id or 0, request.module_id)
     except Exception as e:
         print(f"[Tutor] Log error: {e}")
 
@@ -946,12 +1028,9 @@ async def tutor_hint(
     student_profile = None
     try:
         student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
-        metrics = await student_predictor.predict_metrics(student_profile)
-        student_profile.update(metrics)
     except Exception:
         pass
 
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     exercise_data = None
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(
@@ -974,6 +1053,10 @@ async def tutor_hint(
         token_data.user_id, request.exercise_id, request.module_id or 0,
         "hint_requested",
     )
+    await behavioral_repo.log_frustration_signal(
+        token_data.user_id, request.exercise_id, "hint_requested",
+        f"Hint requested for exercise {request.exercise_id}"
+    )
 
     return {
         "success": True,
@@ -991,8 +1074,6 @@ async def tutor_explain(
     if token_data:
         try:
             student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
-            metrics = await student_predictor.predict_metrics(student_profile)
-            student_profile.update(metrics)
         except Exception:
             pass
 
@@ -1004,6 +1085,15 @@ async def tutor_explain(
         explanation = intelligent_tutor._get_adapted_explanation(concept, level)
     else:
         explanation = f"No encontré información específica sobre '{request.concept}'. ¿Puedes ser más específico? Puedo explicarte sobre variables, funciones, bucles, condicionales, listas, robótica y Python."
+
+    if token_data:
+        try:
+            await behavioral_repo.log_exercise_action(
+                token_data.user_id, 0, request.module_id or 0,
+                "concept_explain", {"concept": request.concept}
+            )
+        except Exception:
+            pass
 
     return {
         "success": True,
@@ -1020,8 +1110,6 @@ async def tutor_student_level(
     student_profile = None
     try:
         student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
-        metrics = await student_predictor.predict_metrics(student_profile)
-        student_profile.update(metrics)
     except Exception:
         pass
 
@@ -1066,29 +1154,68 @@ async def train_predictive_models(
     token_data: TokenData = Depends(verify_admin),
 ):
     """Retrain predictive models with real data from MongoDB"""
-    result = student_predictor.train_on_real_data(behavioral_repo)
-    return {"success": True, "training_result": result}
+    return {"success": True, "message": "Training is handled by the ML pipeline. Run ml_pipeline/run_all.py manually."}
 
 # ============================================
 # Routes - Chatbot (Dialogflow)
 # ============================================
+
+@app.get("/api/chatbot/status", tags=["Chatbot"])
+async def chatbot_status():
+    """Check availability of AI services for the chatbot"""
+    dialogflow_available = bool(settings.dialogflow_project_id)
+    ollama_available = False
+    try:
+        ollama_available = await llm_service.is_available()
+    except Exception:
+        pass
+
+    if dialogflow_available and ollama_available:
+        best = "both"
+        msg = "dialogflow e IA local disponibles"
+    elif dialogflow_available:
+        best = "dialogflow"
+        msg = "solo dialogflow esta disponible"
+    elif ollama_available:
+        best = "ollama"
+        msg = "solo IA local disponible"
+    else:
+        best = "none"
+        msg = "ningun servicio de IA disponible"
+
+    return {
+        "success": True,
+        "dialogflow_available": dialogflow_available,
+        "ollama_available": ollama_available,
+        "best_available": best,
+        "message": msg,
+    }
 
 @app.post("/api/chatbot/public", tags=["Chatbot"])
 async def chat_public(request: PublicChatRequest):
     """Chat with Dialogflow agent (no auth required, for anonymous users)"""
     session_id = request.session_id or f"anon_{datetime.now(timezone.utc).timestamp()}"
 
+    dialogflow_configured = bool(settings.dialogflow_project_id)
     dialogflow_response = None
+
+    if dialogflow_configured:
+        try:
+            dialogflow_response = await ai_service.chat_with_dialogflow(session_id, request.message)
+        except Exception:
+            pass
+
+    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
+        return {"success": True, "message": dialogflow_response, "session_id": session_id, "source": "dialogflow"}
+
+    # Dialogflow fallback — check if Ollama is available first
+    ollama_available = False
     try:
-        dialogflow_response = await ai_service.chat_with_dialogflow(session_id, request.message)
+        ollama_available = await llm_service.is_available()
     except Exception:
         pass
 
-    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
-        return {"success": True, "message": dialogflow_response, "session_id": session_id}
-
-    # Dialogflow fallback — try Ollama directly first
-    if ai_service.is_fallback_response(dialogflow_response or ""):
+    if ollama_available:
         try:
             ollama_response = await ai_tutor_service.answer_question(
                 message=request.message,
@@ -1101,21 +1228,22 @@ async def chat_public(request: PublicChatRequest):
                     "session_id": session_id,
                     "source": "ollama",
                 }
-        except Exception as e:
-            print(f"[Ollama fallback error] {e}")
+        except Exception:
+            pass
 
-    # Fallback: IntelligentTutor if Ollama didn't produce a response
+    # Ollama unavailable — fall back to IntelligentTutor
     tutor_result = await intelligent_tutor.generate_response(
         message=request.message,
         student_profile=None,
         dialogflow_result=dialogflow_response,
     )
 
+    source = "ai_unavailable" if not dialogflow_configured else "dialogflow"
     return {
         "success": True,
         "message": tutor_result["response"],
         "session_id": session_id,
-        "source": tutor_result.get("source", "tutor"),
+        "source": source,
     }
 
 @app.post("/api/chatbot", tags=["Chatbot"])
@@ -1129,16 +1257,17 @@ async def chat(
     student_profile = None
     try:
         student_profile = await behavioral_repo.get_student_behavioral_profile(token_data.user_id)
-        metrics = await student_predictor.predict_metrics(student_profile)
-        student_profile.update(metrics)
     except Exception:
         pass
 
+    dialogflow_configured = bool(settings.dialogflow_project_id)
     dialogflow_response = None
-    try:
-        dialogflow_response = await ai_service.chat_with_dialogflow(session_id, request.message)
-    except Exception:
-        pass
+
+    if dialogflow_configured:
+        try:
+            dialogflow_response = await ai_service.chat_with_dialogflow(session_id, request.message)
+        except Exception:
+            pass
 
     if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
         await event_repository.log_chat_interaction(
@@ -1155,9 +1284,10 @@ async def chat(
 
     response_text = ""
     tutor_result = {"source": "tutor", "intent": "general_chat"}
+    ai_was_unavailable = False
 
-    # Third tier: Ollama fallback when Dialogflow didn't understand
-    if ai_service.is_fallback_response(dialogflow_response or ""):
+    # Ollama fallback when Dialogflow didn't understand, errored, or not configured
+    if not dialogflow_configured or (dialogflow_response and "Error" in dialogflow_response) or ai_service.is_fallback_response(dialogflow_response or ""):
         try:
             ollama_response = await ai_tutor_service.answer_question(
                 message=request.message,
@@ -1167,8 +1297,8 @@ async def chat(
             if ollama_response and len(ollama_response) > 10:
                 response_text = ollama_response
                 tutor_result = {"source": "ollama", "intent": "general_chat"}
-        except Exception as e:
-            print(f"[Ollama fallback error] {e}")
+        except Exception:
+            ai_was_unavailable = True
 
     if tutor_result.get("source") != "ollama":
         tutor_result = await intelligent_tutor.generate_response(
@@ -1178,7 +1308,7 @@ async def chat(
         )
         response_text = tutor_result["response"]
 
-    # Fourth tier: OpenAI fallback if still no good response
+    # OpenAI fallback when Ollama is unavailable or insufficient
     if tutor_result.get("source") != "ollama" and tutor_result.get("intent") in ("general_chat", "fallback") and settings.openai_api_key:
         try:
             import openai
@@ -1202,8 +1332,10 @@ Responde de forma breve, clara y en español. Si la consulta no es educativa, re
                 tutor_result["source"] = "openai"
         except ImportError:
             pass
-        except Exception as e:
-            print(f"[OpenAI fallback error] {e}")
+        except Exception:
+            ai_was_unavailable = True
+
+    ai_source = "ai_unavailable" if ai_was_unavailable and tutor_result.get("source") != "openai" else tutor_result.get("source", "tutor")
 
     await event_repository.log_chat_interaction(
         token_data.user_id,
@@ -1219,18 +1351,22 @@ Responde de forma breve, clara y en español. Si la consulta no es educativa, re
             "session_id": session_id,
             "message": request.message,
             "response": response_text,
-            "source": tutor_result.get("source", "tutor"),
+            "source": ai_source,
             "intent": tutor_result.get("intent", "unknown"),
             "student_level": tutor_result.get("student_level", "beginner"),
             "timestamp": datetime.now(timezone.utc),
         })
+        await behavioral_repo.log_exercise_action(
+            token_data.user_id, 0, 0, "chatbot_message",
+            {"source": ai_source, "intent": tutor_result.get("intent")}
+        )
     except Exception:
         pass
 
     return {
         "success": True,
         "message": response_text,
-        "source": tutor_result.get("source", "tutor"),
+        "source": ai_source,
     }
 
 # ============================================
@@ -1316,6 +1452,18 @@ async def execute_code(
     except Exception as e:
         error = str(e)
         
+    try:
+        await behavioral_repo.log_exercise_action(
+            token_data.user_id, 0, 0, "execute_code",
+            {"has_error": error is not None, "code_length": len(request.code)}
+        )
+        if error:
+            await behavioral_repo.log_frustration_signal(
+                token_data.user_id, 0, "execution_error", str(error)[:200]
+            )
+    except Exception:
+        pass
+
     return {
         "success": error is None,
         "output": f.getvalue(),
@@ -1443,6 +1591,24 @@ async def submit_exercise(
             "attempts": attempt_count,
             "points_earned": exercise["points"]
         })
+
+    try:
+        await behavioral_repo.log_exercise_action(
+            student_id, request.exercise_id, request.module_id,
+            "submit", {"passed": passed, "score": score, "attempts": attempt_count}
+        )
+        if error:
+            await behavioral_repo.log_frustration_signal(
+                student_id, request.exercise_id, "compile_error", str(error)[:200]
+            )
+        if not passed and attempt_count >= 3:
+            await behavioral_repo.log_frustration_signal(
+                student_id, request.exercise_id, "repeated_failure",
+                f"Attempt {attempt_count} failed"
+            )
+        await behavioral_repo.update_engagement_score(student_id, request.module_id)
+    except Exception:
+        pass
 
     can_view_solution = attempt_count >= 3 and not passed
     solution = None
@@ -1598,7 +1764,6 @@ async def get_exercise_attempts(exercise_id: int, token_data: TokenData = Depend
 @app.get("/api/exercises/difficulty-analysis", tags=["Exercises"])
 async def get_exercise_difficulty_analysis(token_data: TokenData = Depends(verify_teacher)):
     """Analyze exercise difficulty based on student performance and suggest adjustments"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT 
             e.id, e.title, e.difficulty as current_difficulty, e.points, e.module_id,
@@ -1739,6 +1904,14 @@ async def complete_module(
     
     # Log event
     await event_repository.log_event("module_completed", student_id, {"module_id": module_id, "manual": True})
+
+    try:
+        await behavioral_repo.log_exercise_action(
+            student_id, 0, module_id, "module_completed"
+        )
+        await behavioral_repo.update_engagement_score(student_id, module_id)
+    except Exception:
+        pass
     
     return {"success": True, "message": "Module completed!", "points_earned": 50}
 
@@ -1880,7 +2053,6 @@ async def get_module_lessons(module_id: int, token_data: TokenData = Depends(ver
 async def complete_lesson(lesson_id: int, token_data: TokenData = Depends(verify_token)):
     """Mark a lesson as completed (for lessons without exercises)"""
     student_id = token_data.user_id
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
 
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT module_id FROM lessons WHERE id = %s", (lesson_id,))
@@ -1894,6 +2066,15 @@ async def complete_lesson(lesson_id: int, token_data: TokenData = Depends(verify
             VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
         """, (student_id, lesson_id, module_id))
 
+    try:
+        await behavioral_repo.log_exercise_action(
+            student_id, 0, module_id, "lesson_completed",
+            {"lesson_id": lesson_id}
+        )
+        await behavioral_repo.update_engagement_score(student_id, module_id)
+    except Exception:
+        pass
+
     return {"success": True, "message": "Lesson completed"}
 
 # --- Module Lesson CRUD (for admin / teacher module editor) ---
@@ -1901,7 +2082,6 @@ async def complete_lesson(lesson_id: int, token_data: TokenData = Depends(verify
 @app.post("/api/modules/{module_id}/lessons", tags=["Modules"])
 async def create_module_lesson(module_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Create a lesson in a module (teacher must own the module)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     body = await request.json()
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
@@ -1921,7 +2101,6 @@ async def create_module_lesson(module_id: int, request: Request, token_data: Tok
 @app.put("/api/modules/{module_id}/lessons/{lesson_id}", tags=["Modules"])
 async def update_module_lesson(module_id: int, lesson_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Update a lesson (teacher must own the module)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     body = await request.json()
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
@@ -1946,7 +2125,6 @@ async def update_module_lesson(module_id: int, lesson_id: int, request: Request,
 @app.delete("/api/modules/{module_id}/lessons/{lesson_id}", tags=["Modules"])
 async def delete_module_lesson(module_id: int, lesson_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Delete a lesson (teacher must own the module)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
         row = cursor.fetchone()
@@ -1961,7 +2139,6 @@ async def delete_module_lesson(module_id: int, lesson_id: int, token_data: Token
 @app.post("/api/modules/{module_id}/exercises", tags=["Modules"])
 async def create_module_exercise(module_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Create an exercise in a module (teacher must own the module)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     body = await request.json()
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
@@ -1985,7 +2162,6 @@ async def create_module_exercise(module_id: int, request: Request, token_data: T
 @app.put("/api/modules/{module_id}/exercises/{exercise_id}", tags=["Modules"])
 async def update_module_exercise(module_id: int, exercise_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Update an exercise (teacher must own the module)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     body = await request.json()
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
@@ -2011,7 +2187,6 @@ async def update_module_exercise(module_id: int, exercise_id: int, request: Requ
 @app.delete("/api/modules/{module_id}/exercises/{exercise_id}", tags=["Modules"])
 async def delete_module_exercise(module_id: int, exercise_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Delete an exercise (teacher must own the module)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT teacher_id FROM modules WHERE id = %s", (module_id,))
         row = cursor.fetchone()
@@ -2223,7 +2398,6 @@ async def get_recent_achievements(token_data: TokenData = Depends(verify_token))
 @app.get("/api/modules", tags=["Modules"])
 async def list_modules():
     """List all published modules (including global)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT m.id, m.title, m.description, m.theory_content, m.teacher_id,
                m.status, m."order", m.is_published, m.is_global, m.difficulty, m.lesson_count,
@@ -2250,7 +2424,6 @@ async def list_modules():
 @app.get("/api/modules/search", tags=["Modules"])
 async def search_modules(q: str = "", token_data: TokenData = Depends(verify_token)):
     """Search modules dynamically"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT m.id, m.title, m.description, m.teacher_id, u.full_name as teacher_name 
         FROM modules m
@@ -2307,7 +2480,6 @@ async def get_module(module_id: int):
     result = module.to_dict()
     
     # Include lessons with exercises
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             SELECT id, title, theory_content, "order"
@@ -2344,7 +2516,6 @@ async def get_module(module_id: int):
 @app.get("/api/modules/{module_id}/exercises", tags=["Modules"])
 async def get_module_exercises(module_id: int):
     """Get exercises for a module"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT id, module_id, title, description, theory_content, instructions, difficulty, points, "order"
         FROM exercises WHERE module_id = %s ORDER BY "order" ASC
@@ -2370,7 +2541,6 @@ async def get_module_exercises(module_id: int):
 @app.get("/api/exercises", tags=["Exercises"])
 async def get_all_exercises():
     """Get all exercises without theory content"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT e.id, e.module_id, e.title, e.description, e.instructions, e.difficulty, e.points, m.title as module_title
         FROM exercises e
@@ -2563,7 +2733,6 @@ async def get_teacher_alerts(token_data: TokenData = Depends(verify_teacher)):
 @app.get("/api/admin/users", tags=["Admin"])
 async def get_all_users(token_data: TokenData = Depends(verify_admin)):
     """List all users"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = "SELECT id, email, full_name, role, is_active, points, streak_days, created_at FROM users ORDER BY created_at DESC"
     
     users = []
@@ -2592,7 +2761,6 @@ async def update_user_role(
 ):
     """Update user role"""
     from domain.entities.user import UserRole
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     try:
         valid_role = UserRole(request.role)
@@ -2608,7 +2776,6 @@ async def update_user_role(
 @app.get("/api/admin/teachers/pending", tags=["Admin"])
 async def get_pending_teachers(token_data: TokenData = Depends(verify_admin)):
     """List users who requested to be teachers"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT id, email, full_name, teacher_request_status, created_at
         FROM users WHERE teacher_request_status = 'pending'
@@ -2627,7 +2794,6 @@ async def get_pending_teachers(token_data: TokenData = Depends(verify_admin)):
 @app.post("/api/admin/teachers/approve/{user_id}", tags=["Admin"])
 async def approve_teacher(user_id: int, token_data: TokenData = Depends(verify_admin)):
     """Approve a teacher request"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             UPDATE users SET role = 'teacher', teacher_request_status = 'approved'
@@ -2640,7 +2806,6 @@ async def approve_teacher(user_id: int, token_data: TokenData = Depends(verify_a
 @app.post("/api/admin/teachers/reject/{user_id}", tags=["Admin"])
 async def reject_teacher(user_id: int, token_data: TokenData = Depends(verify_admin)):
     """Reject a teacher request"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             UPDATE users SET teacher_request_status = 'rejected'
@@ -2687,7 +2852,6 @@ async def reject_module_deletion(module_id: int, token_data: TokenData = Depends
 @app.get("/api/dashboard/student", tags=["Student"])
 async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
     """Get student dashboard data - fully synced with DB"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     student_id = token_data.user_id
     
@@ -2957,7 +3121,6 @@ async def admin_get_module(module_id: int, token_data: TokenData = Depends(verif
 @app.post("/api/admin/modules/{module_id}/approve", tags=["Admin"])
 async def admin_approve_module(module_id: int, token_data: TokenData = Depends(verify_admin)):
     """Approve a module (set status to approved and publish)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             UPDATE modules SET status = 'approved', is_published = TRUE
@@ -2970,7 +3133,6 @@ async def admin_approve_module(module_id: int, token_data: TokenData = Depends(v
 @app.post("/api/admin/modules/{module_id}/reject", tags=["Admin"])
 async def admin_reject_module(module_id: int, request: Request, token_data: TokenData = Depends(verify_admin)):
     """Reject a module with feedback"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     body = await request.json()
     feedback = body.get("feedback", "")
@@ -2988,7 +3150,6 @@ async def admin_reject_module(module_id: int, request: Request, token_data: Toke
 @app.put("/api/admin/modules/{module_id}/content", tags=["Admin"])
 async def admin_update_module_content(module_id: int, request: Request, token_data: TokenData = Depends(verify_admin)):
     """Admin directly edits module content (theory, lessons, etc.)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     body = await request.json()
     
@@ -3040,7 +3201,6 @@ async def admin_update_module_content(module_id: int, request: Request, token_da
 @app.get("/api/admin/content-review", tags=["Admin"])
 async def admin_content_review_list(token_data: TokenData = Depends(verify_admin)):
     """List modules pending review"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT m.id, m.title, m.description, m.status, m.created_at,
                u.full_name as teacher_name
@@ -3063,7 +3223,6 @@ async def admin_content_review_list(token_data: TokenData = Depends(verify_admin
 @app.get("/api/challenges", tags=["Challenges"])
 async def list_challenges(token_data: TokenData = Depends(verify_token)):
     """Get all challenges"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     role = token_data.role
     
@@ -3124,7 +3283,6 @@ async def list_challenges(token_data: TokenData = Depends(verify_token)):
 @app.get("/api/challenges/{challenge_id}", tags=["Challenges"])
 async def get_challenge(challenge_id: int, token_data: TokenData = Depends(verify_token)):
     """Get a single challenge with full details"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     query = """
         SELECT c.id, c.title, c.description, c.instructions, c.difficulty, c.points,
@@ -3211,7 +3369,6 @@ async def get_challenge(challenge_id: int, token_data: TokenData = Depends(verif
 @app.post("/api/challenges", tags=["Challenges"])
 async def create_challenge(request: ChallengeCreate, token_data: TokenData = Depends(verify_teacher)):
     """Create a new challenge with code, solution, deadline"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     deadline_val = None
     if request.deadline:
@@ -3247,7 +3404,6 @@ async def create_challenge(request: ChallengeCreate, token_data: TokenData = Dep
 @app.put("/api/challenges/{challenge_id}", tags=["Challenges"])
 async def update_challenge(challenge_id: int, request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Update a challenge"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     import json
     
     body = await request.json()
@@ -3289,7 +3445,6 @@ async def update_challenge(challenge_id: int, request: Request, token_data: Toke
 @app.delete("/api/challenges/{challenge_id}", tags=["Challenges"])
 async def delete_challenge(challenge_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Delete a challenge"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = "DELETE FROM challenges WHERE id = %s AND teacher_id = %s"
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (challenge_id, token_data.user_id))
@@ -3301,7 +3456,6 @@ async def submit_challenge(
     token_data: TokenData = Depends(verify_token)
 ):
     """Submit a challenge attempt with code execution and grading"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     student_id = token_data.user_id
     
@@ -3394,6 +3548,18 @@ async def submit_challenge(
             "points_earned": challenge["points"]
         })
 
+    try:
+        await behavioral_repo.log_exercise_action(
+            student_id, request.challenge_id, 0, "challenge_submit",
+            {"passed": passed, "score": score}
+        )
+        if error:
+            await behavioral_repo.log_frustration_signal(
+                student_id, request.challenge_id, "challenge_error", str(error)[:200]
+            )
+    except Exception:
+        pass
+
     return {
         "success": True,
         "passed": passed,
@@ -3406,7 +3572,6 @@ async def submit_challenge(
 @app.get("/api/teacher/pending-enrollments", tags=["Teacher"])
 async def get_pending_enrollments(token_data: TokenData = Depends(verify_teacher)):
     """Get ALL pending enrollment requests across all teacher's classes"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT ce.id, ce.student_id, ce.class_id, ce.status, ce.enrolled_at,
                u.full_name, u.email, c.title as class_title
@@ -3432,7 +3597,6 @@ async def get_pending_enrollments(token_data: TokenData = Depends(verify_teacher
 @app.post("/api/teacher/enrollments/approve", tags=["Teacher"])
 async def approve_enrollment_batch(request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Approve an enrollment request"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     body = await request.json()
     enrollment_id = body.get("enrollment_id")
     class_id = body.get("class_id")
@@ -3465,7 +3629,6 @@ async def approve_enrollment_batch(request: Request, token_data: TokenData = Dep
 @app.post("/api/teacher/enrollments/reject", tags=["Teacher"])
 async def reject_enrollment_batch(request: Request, token_data: TokenData = Depends(verify_teacher)):
     """Reject an enrollment request"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     body = await request.json()
     enrollment_id = body.get("enrollment_id")
     class_id = body.get("class_id")
@@ -3494,7 +3657,6 @@ async def reject_enrollment_batch(request: Request, token_data: TokenData = Depe
 @app.post("/api/classes/{class_id}/unenroll/{student_id}", tags=["Teacher"])
 async def unenroll_student(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Unenroll a student from a class (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
@@ -3517,7 +3679,6 @@ async def unenroll_student(class_id: int, student_id: int, token_data: TokenData
 @app.get("/api/classes", tags=["Classes"])
 async def list_classes(token_data: Optional[TokenData] = Depends(verify_token_optional)):
     """List all published classes (teachers see only their own; students see all)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT c.id, c.title, c.description, c.category, c.difficulty, 
                c.teacher_id, c.is_published, c.created_at,
@@ -3550,7 +3711,6 @@ async def list_classes(token_data: Optional[TokenData] = Depends(verify_token_op
 @app.get("/api/classes/my-classes", tags=["Classes"])
 async def get_my_classes(token_data: TokenData = Depends(verify_teacher)):
     """Get teacher's own classes"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT c.id, c.title, c.description, c.category, c.difficulty, 
                c.teacher_id, c.is_published, c.created_at,
@@ -3578,7 +3738,6 @@ async def get_my_classes(token_data: TokenData = Depends(verify_teacher)):
 @app.get("/api/classes/enrolled", tags=["Classes"])
 async def get_enrolled_classes(token_data: TokenData = Depends(verify_token)):
     """Get classes the student is enrolled in (approved only)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT c.id, c.title, c.description, c.category, c.difficulty,
                c.teacher_id, u.full_name as teacher_name,
@@ -3605,7 +3764,6 @@ async def get_enrolled_classes(token_data: TokenData = Depends(verify_token)):
 @app.get("/api/classes/{class_id}", tags=["Classes"])
 async def get_class(class_id: int, token_data: Optional[TokenData] = Depends(verify_token_optional)):
     """Get class by ID with modules"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query_class = """
         SELECT c.id, c.title, c.description, c.category, c.difficulty, 
                c.teacher_id, c.is_published, c.created_at, u.full_name as teacher_name
@@ -3655,7 +3813,6 @@ async def get_class(class_id: int, token_data: Optional[TokenData] = Depends(ver
 @app.post("/api/classes", tags=["Classes"])
 async def create_class(request: ClassCreate, token_data: TokenData = Depends(verify_teacher)):
     """Create a new class"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         INSERT INTO classes (title, description, category, difficulty, teacher_id, is_published)
         VALUES (%s, %s, %s, %s, %s, %s)
@@ -3670,7 +3827,6 @@ async def create_class(request: ClassCreate, token_data: TokenData = Depends(ver
 @app.put("/api/classes/{class_id}", tags=["Classes"])
 async def update_class(class_id: int, request: ClassUpdate, token_data: TokenData = Depends(verify_teacher)):
     """Update a class"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     fields = []
     values = []
     if request.title is not None:
@@ -3696,7 +3852,6 @@ async def update_class(class_id: int, request: ClassUpdate, token_data: TokenDat
 @app.delete("/api/classes/{class_id}", tags=["Classes"])
 async def delete_class(class_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Delete a class"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = "DELETE FROM classes WHERE id = %s AND teacher_id = %s"
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute(query, (class_id, token_data.user_id))
@@ -3707,7 +3862,6 @@ async def delete_class(class_id: int, token_data: TokenData = Depends(verify_tea
 @app.post("/api/classes/{class_id}/enroll", tags=["Classes"])
 async def enroll_class(class_id: int, token_data: TokenData = Depends(verify_token)):
     """Request enrollment in a class"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             SELECT status FROM class_enrollments
@@ -3730,7 +3884,6 @@ async def enroll_class(class_id: int, token_data: TokenData = Depends(verify_tok
 @app.get("/api/classes/{class_id}/requests", tags=["Classes"])
 async def get_enrollment_requests(class_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Get pending enrollment requests for a class (teacher only)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT ce.id, ce.student_id, ce.status, ce.enrolled_at,
                u.full_name, u.email
@@ -3754,7 +3907,6 @@ async def get_enrollment_requests(class_id: int, token_data: TokenData = Depends
 @app.post("/api/classes/{class_id}/approve/{student_id}", tags=["Classes"])
 async def approve_enrollment(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Approve a student's enrollment request"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         UPDATE class_enrollments
         SET status = 'approved', approved_at = CURRENT_TIMESTAMP
@@ -3768,7 +3920,6 @@ async def approve_enrollment(class_id: int, student_id: int, token_data: TokenDa
 @app.post("/api/classes/{class_id}/reject/{student_id}", tags=["Classes"])
 async def reject_enrollment(class_id: int, student_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Reject a student's enrollment request"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         UPDATE class_enrollments
         SET status = 'rejected'
@@ -3784,7 +3935,6 @@ async def reject_enrollment(class_id: int, student_id: int, token_data: TokenDat
 @app.get("/api/classes/{class_id}/modules", tags=["Classes"])
 async def list_class_modules(class_id: int, token_data: TokenData = Depends(verify_token)):
     """List modules in a class"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT cm.id, cm.title, cm.description, cm.theory_content, cm."order",
                COUNT(DISTINCT ce.id) as exercise_count
@@ -3810,7 +3960,6 @@ async def get_class_module(
     token_data: TokenData = Depends(verify_token),
 ):
     """Get a single class module with its exercises (enrollment required)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
 
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
@@ -3854,7 +4003,6 @@ async def get_class_module(
 @app.post("/api/classes/{class_id}/modules", tags=["Classes"])
 async def create_class_module(class_id: int, request: ClassModuleCreate, token_data: TokenData = Depends(verify_teacher)):
     """Create a module in a class (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
         if not cursor.fetchone():
@@ -3872,7 +4020,6 @@ async def create_class_module(class_id: int, request: ClassModuleCreate, token_d
 @app.put("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
 async def update_class_module(class_id: int, module_id: int, request: ClassModuleUpdate, token_data: TokenData = Depends(verify_teacher)):
     """Update a class module (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
         if not cursor.fetchone():
@@ -3899,7 +4046,6 @@ async def update_class_module(class_id: int, module_id: int, request: ClassModul
 @app.delete("/api/classes/{class_id}/modules/{module_id}", tags=["Classes"])
 async def delete_class_module(class_id: int, module_id: int, token_data: TokenData = Depends(verify_teacher)):
     """Delete a class module (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
         if not cursor.fetchone():
@@ -3914,7 +4060,6 @@ async def delete_class_module(class_id: int, module_id: int, token_data: TokenDa
 @app.get("/api/classes/{class_id}/modules/{module_id}/exercises", tags=["Classes"])
 async def list_class_exercises(class_id: int, module_id: int, token_data: TokenData = Depends(verify_token)):
     """List exercises for a class module"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     query = """
         SELECT ce.id, ce.title, ce.description, ce.instructions, ce.exercise_type,
                ce.difficulty, ce.points, ce."order", ce.metadata,
@@ -3943,7 +4088,6 @@ async def create_class_exercise(
     token_data: TokenData = Depends(verify_teacher)
 ):
     """Create an exercise in a class module (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     import json
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
@@ -3969,7 +4113,6 @@ async def update_class_exercise(
     request: ClassExerciseUpdate, token_data: TokenData = Depends(verify_teacher)
 ):
     """Update a class exercise (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     import json
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
@@ -4010,7 +4153,6 @@ async def delete_class_exercise(
     token_data: TokenData = Depends(verify_teacher)
 ):
     """Delete a class exercise (teacher must own the class)"""
-    from infrastructure.adapters.output.postgres.connection import PostgresConnection
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
         if not cursor.fetchone():
@@ -4060,6 +4202,10 @@ async def ai_tutor_ask(request: AITutorAskRequest, token_data: TokenData = Depen
             student_level=request.student_level,
             student_context={"user_id": token_data.user_id},
         )
+        await behavioral_repo.log_exercise_action(
+            token_data.user_id, 0, 0, "ai_tutor_ask",
+            {"student_level": request.student_level}
+        )
         return {"success": True, "response": response, "source": "llm_tutor"}
     except Exception as e:
         print(f"[AI Tutor] Error: {e}")
@@ -4078,6 +4224,15 @@ async def ai_tutor_hint(request: Request, token_data: TokenData = Depends(verify
             attempts=body.get("attempts", 1),
             student_level=body.get("level", "beginner"),
         )
+        await behavioral_repo.log_exercise_action(
+            token_data.user_id, 0, 0, "ai_tutor_hint",
+            {"exercise_title": body.get("title", "")[:50]}
+        )
+        if body.get("error"):
+            await behavioral_repo.log_frustration_signal(
+                token_data.user_id, 0, "ai_hint_requested",
+                str(body.get("error", ""))[:200]
+            )
         return {"success": True, "hint": response}
     except Exception as e:
         print(f"[AI Hint] Error: {e}")

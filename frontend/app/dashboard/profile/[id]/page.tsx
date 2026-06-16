@@ -22,7 +22,7 @@ interface ProfileData {
   points: number
   streak_days: number
   achievements: { id: number; name: string; icon: string }[]
-  classes: { id: number; title: string; progress: number }[]
+  classes: { id: number; title: string; progress?: number; module_count?: number; student_count?: number }[]
 }
 
 export default function ProfilePage() {
@@ -53,21 +53,25 @@ export default function ProfilePage() {
             try {
               const achRes = await fetch(`${API_URL}/achievements?user_id=${u.id}`, { credentials: "include" })
               const achData = await achRes.json()
-              if (achData.success) achievements = achData.achievements || []
+              if (achData.success) {
+                achievements = (achData.achievements || [])
+                  .filter((a: any) => !a.is_locked)
+                  .map((a: any) => ({ id: a.id, name: a.name, icon: a.icon }))
+              }
             } catch (_) {}
 
-            let enrolledClasses: any[] = []
+            let profileClasses: any[] = []
             try {
-              const clsRes = await fetch(`${API_URL}/classes/enrolled`, { credentials: "include" })
+              const clsRes = await fetch(`${API_URL}/users/${u.id}/classes`, { credentials: "include" })
               const clsData = await clsRes.json()
               if (clsData.success) {
-                enrolledClasses = (clsData.classes || [])
-                  .filter((c: any) => c.enrollment_status === "approved")
-                  .map((c: any) => ({
-                    id: c.id,
-                    title: c.title,
-                    progress: c.progress || 0
-                  }))
+                profileClasses = (clsData.classes || []).map((c: any) => ({
+                  id: c.id,
+                  title: c.title,
+                  progress: c.progress || 0,
+                  module_count: c.module_count || 0,
+                  student_count: c.student_count || 0,
+                }))
               }
             } catch (_) {}
 
@@ -80,7 +84,7 @@ export default function ProfilePage() {
               points: u.points || 0,
               streak_days: u.streak_days || 0,
               achievements,
-              classes: enrolledClasses
+              classes: profileClasses
             })
             setLoading(false)
             return
@@ -238,17 +242,23 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {profile.classes.map((cls) => (
-              <div key={cls.id} className="flex items-center gap-3 p-3 rounded-lg border">
-                <BookOpen className="w-5 h-5 text-primary shrink-0" />
-                <span className="font-medium">{cls.title}</span>
+              <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <BookOpen className="w-5 h-5 text-primary shrink-0" />
+                  <span className="font-medium">{cls.title}</span>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  {cls.module_count > 0 && <span>{cls.module_count} módulos</span>}
+                  {cls.student_count > 0 && <span>{cls.student_count} estudiantes</span>}
+                </div>
               </div>
             ))}
           </CardContent>
         </Card>
       )}
 
-      {/* Achievements */}
-      {profile.achievements.length > 0 && (
+      {/* Achievements (only for students) */}
+      {isStudent && profile.achievements.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

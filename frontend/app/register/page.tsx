@@ -1,14 +1,14 @@
 "use client"
 
 import { useState } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Code, Eye, EyeOff, Loader2, GraduationCap, BookOpen } from "lucide-react"
+import { Eye, EyeOff, Loader2, GraduationCap, BookOpen } from "lucide-react"
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("")
@@ -48,11 +48,8 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4 py-8">
-      <Link href="/" className="mb-8 flex items-center gap-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-          <Code className="h-6 w-6 text-primary-foreground" />
-        </div>
-        <span className="text-2xl font-bold text-foreground">RoboLearn</span>
+      <Link href="/" className="mb-8">
+        <Image src="/logo.svg" alt="RoboLearn" width={160} height={40} priority />
       </Link>
 
       <Card className="w-full max-w-md border-0 shadow-lg">

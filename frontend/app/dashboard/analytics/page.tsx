@@ -7,10 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend,
+  ScatterChart, Scatter,
 } from "recharts"
 import {
   Loader2, AlertTriangle, TrendingUp, Brain, Users,
   Target, Zap, Clock, AlertCircle, UserX, Star, ThumbsUp, ThumbsDown,
+  GitBranch, Activity,
 } from "lucide-react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
@@ -22,8 +24,12 @@ export default function AnalyticsPage() {
   const [students, setStudents] = useState<any[]>([])
   const [summary, setSummary] = useState<any>(null)
   const [difficultyAnalysis, setDifficultyAnalysis] = useState<any[]>([])
+  const [riskStudents, setRiskStudents] = useState<any[]>([])
+  const [clusters, setClusters] = useState<any>(null)
+  const [anomalies, setAnomalies] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [processing, setProcessing] = useState(false)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -32,9 +38,11 @@ export default function AnalyticsPage() {
         const json = await dashRes.json()
         if (json.success) {
           const cp = json.class_predictions || {}
+          const isProcessing = cp.processing === true
           setData(json)
           setStudents(cp.students || [])
           setSummary(cp.summary || {})
+          setProcessing(isProcessing)
         } else {
           setErrorMsg(json.detail || json.error || "Error al cargar analítica")
         }
@@ -55,13 +63,58 @@ export default function AnalyticsPage() {
       }
     }
 
+    const fetchRiskStudents = async () => {
+      try {
+        const res = await fetch(`${API_URL}/analytics/risk-students?min_dropout_risk=0.3`, { credentials: "include" })
+        const json = await res.json()
+        if (json.success) setRiskStudents(json.risk_students || [])
+      } catch {}
+    }
+
+    const fetchClusters = async () => {
+      try {
+        const res = await fetch(`${API_URL}/analytics/clusters`, { credentials: "include" })
+        const json = await res.json()
+        if (json.success) setClusters(json)
+      } catch {}
+    }
+
+    const fetchAnomalies = async () => {
+      try {
+        const res = await fetch(`${API_URL}/analytics/anomalies`, { credentials: "include" })
+        const json = await res.json()
+        if (json.success) setAnomalies(json.anomalies || [])
+      } catch {}
+    }
+
     const fetchData = async () => {
-      await Promise.all([fetchDashboard(), fetchDifficulty()])
+      await Promise.all([fetchDashboard(), fetchDifficulty(), fetchRiskStudents(), fetchClusters(), fetchAnomalies()])
       setIsLoading(false)
     }
 
     fetchData()
   }, [])
+
+  // Poll while predictions are processing
+  useEffect(() => {
+    if (!processing) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" })
+        const json = await res.json()
+        if (json.success) {
+          const cp = json.class_predictions || {}
+          setData(json)
+          setStudents(cp.students || [])
+          setSummary(cp.summary || {})
+          if (cp.processing !== true) {
+            setProcessing(false)
+          }
+        }
+      } catch {}
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [processing])
 
   if (isLoading) {
     return (
@@ -101,6 +154,13 @@ export default function AnalyticsPage() {
           Métricas avanzadas de rendimiento estudiantil generadas por machine learning.
         </p>
       </div>
+
+      {processing && (
+        <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-700 dark:text-amber-400 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Generando predicciones de IA. Los resultados se actualizarán automáticamente en unos segundos.</span>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-primary/20">
@@ -163,10 +223,19 @@ export default function AnalyticsPage() {
           <TabsTrigger value="distribution">Distribución</TabsTrigger>
           <TabsTrigger value="activity">Actividad</TabsTrigger>
           <TabsTrigger value="difficulty">Dificultad</TabsTrigger>
+          <TabsTrigger value="risk" className="text-red-500">En Riesgo</TabsTrigger>
+          <TabsTrigger value="clusters">Clusters</TabsTrigger>
+          <TabsTrigger value="anomalies">Anomalías</TabsTrigger>
         </TabsList>
 
         <TabsContent value="students" className="space-y-4">
-          {students.length === 0 ? (
+          {students.length === 0 && processing ? (
+            <div className="flex flex-col items-center justify-center p-12 bg-card rounded-xl border border-dashed text-center">
+              <Loader2 className="h-8 w-8 text-primary animate-spin mb-4" />
+              <h3 className="text-lg font-semibold mb-1">Generando predicciones...</h3>
+              <p className="text-muted-foreground text-sm">Estamos analizando los datos de tus estudiantes. Los resultados aparecerán automáticamente en unos momentos.</p>
+            </div>
+          ) : students.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 bg-card rounded-xl border border-dashed text-center">
               <Users className="h-8 w-8 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-1">Sin datos de estudiantes</h3>
@@ -390,6 +459,173 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="risk">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserX className="h-5 w-5 text-red-500" />
+                  Estudiantes en Riesgo
+                </CardTitle>
+                <CardDescription>Estudiantes con alto riesgo de abandono, frustración o bajo engagement</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {riskStudents.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>No hay estudiantes en riesgo detectados.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {riskStudents.map((s: any) => (
+                      <Card key={s.student_id} className="border-l-4 border-l-red-500">
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h4 className="font-semibold text-sm">Estudiante #{s.student_id}</h4>
+                              <div className="flex gap-3 mt-2 text-sm text-muted-foreground">
+                                <span className="text-red-500">Abandono: {s.dropout_risk != null ? `${(s.dropout_risk * 100).toFixed(0)}%` : "N/A"}</span>
+                                <span className="text-amber-500">Frustración: {s.frustration_level === 2 ? "Alta" : s.frustration_level === 1 ? "Media" : "Baja"}</span>
+                                <span className="text-blue-500">Engagement: {s.engagement != null ? `${(s.engagement * 100).toFixed(0)}%` : s.engagement_score != null ? `${(s.engagement_score * 100).toFixed(0)}%` : "N/A"}</span>
+                              </div>
+                            </div>
+                            <Badge variant="destructive">En Riesgo</Badge>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="clusters">
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <GitBranch className="h-5 w-5 text-primary" />
+                  Distribución de Clusters
+                </CardTitle>
+                <CardDescription>Grupos de aprendizaje detectados por KMeans</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {clusters?.distribution ? (
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={Object.entries(clusters.distribution).map(([k, v]) => ({ cluster: k, count: v }))}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="cluster" />
+                        <YAxis />
+                        <RechartsTooltip />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                          {(Object.entries(clusters.distribution) as [string, number][]).map(([k]) => (
+                            <rect key={k} fill={["#3b82f6","#10b981","#f59e0b","#ef4444"][parseInt(k) % 4]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <p className="text-center py-8 text-muted-foreground text-sm">Sin datos de clusters.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-primary" />
+                  Proyección PCA 2D
+                </CardTitle>
+                <CardDescription>Visualización de clusters reducida a 2 componentes</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {clusters?.pca_projection && clusters.pca_projection.length > 0 ? (
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ScatterChart>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="x" type="number" />
+                        <YAxis dataKey="y" type="number" />
+                        <RechartsTooltip />
+                        {Array.from(new Set(clusters.pca_projection.map((p: any) => p.cluster))).map((c: any) => (
+                          <Scatter key={c} data={clusters.pca_projection.filter((p: any) => p.cluster === c)} fill={["#3b82f6","#10b981","#f59e0b","#ef4444"][c % 4]} name={`Cluster ${c}`} />
+                        ))}
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <p className="text-center py-8 text-muted-foreground text-sm">Sin datos de proyección PCA.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Resumen de Clusters</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {clusters?.summary && clusters.summary.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-4">
+                    {clusters.summary.map((s: any, i: number) => (
+                      <Card key={i} className="p-3">
+                        <h4 className="text-sm font-semibold mb-1">Cluster {s.cluster}</h4>
+                        <p className="text-xs text-muted-foreground">Estudiantes: {s.count}</p>
+                        <p className="text-xs text-muted-foreground">Engagement: {(s.avg_engagement * 100).toFixed(0)}%</p>
+                        <p className="text-xs text-muted-foreground">Rendimiento: {(s.avg_performance * 100).toFixed(0)}%</p>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center py-4 text-muted-foreground">Sin resumen disponible.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="anomalies">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Detección de Anomalías
+              </CardTitle>
+              <CardDescription>Estudiantes con patrones de comportamiento atípicos detectados por IsolationForest</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {anomalies.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No se detectaron anomalías recientes.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {anomalies.map((a: any, i: number) => (
+                    <Card key={i} className="border-l-4 border-l-amber-500">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-semibold text-sm">Estudiante #{a.student_id}</h4>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Semana {a.week_number} — Score: {(a.anomaly_score * 100).toFixed(0)}%
+                            </p>
+                            {a.reason && <p className="text-xs text-muted-foreground mt-1">{a.reason}</p>}
+                          </div>
+                          <Badge variant="outline" className="text-amber-500 border-amber-500">
+                            Score: {(a.anomaly_score * 100).toFixed(0)}%
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

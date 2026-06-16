@@ -13,13 +13,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 
-const MOCK_USERS = [
-  { id: 1, full_name: "Ana García", email: "ana@estudiante.com", role: "student", points: 150, status: "activo", registered_at: "2024-01-15" },
-  { id: 2, full_name: "Carlos Profe", email: "carlos@profe.com", role: "teacher", points: 0, status: "activo", registered_at: "2024-01-10" },
-  { id: 3, full_name: "Luis Rodríguez", email: "luis@estudiante.com", role: "student", points: 420, status: "inactivo", registered_at: "2024-02-05" },
-  { id: 4, full_name: "Marta Sánchez", email: "marta@estudiante.com", role: "student", points: 890, status: "activo", registered_at: "2024-03-12" },
-]
-
 export default function UsersPage() {
   const { user } = useAuth()
   const [users, setUsers] = useState<any[]>([])
