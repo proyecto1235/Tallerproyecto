@@ -1,0 +1,30 @@
+# RoboLearn — ML Pipeline Training Summary
+
+
+## Engagement
+
+- **mae**: 0.0478
+- **rmse**: 0.0733
+- **r2**: 0.5861
+
+## Performance
+
+- **mae**: 0.0871
+- **rmse**: 0.1223
+- **r2**: 0.6132
+
+## Dropout
+
+- **accuracy**: 0.9981
+- **classification_report**: {'0': {'precision': 0.9982550921110029, 'recall': 0.9998655597754849, 'f1-score': 0.9990596769318602, 'support': 29753.0}, '1': {'precision': 0.9798994974874372, 'recall': 0.7894736842105263, 'f1-score': 0.874439461883408, 'support': 247.0}, 'accuracy': 0.9981333333333333, 'macro avg': {'precision': 0.9890772947992201, 'recall': 0.8946696219930056, 'f1-score': 0.9367495694076341, 'support': 30000.0}, 'weighted avg': {'precision': 0.9981039643819356, 'recall': 0.9981333333333333, 'f1-score': 0.9980336371612946, 'support': 30000.0}}
+- **confusion_matrix**: [[29749, 4], [52, 195]]
+- **precision**: 0.9799
+- **recall**: 0.7895
+- **f1**: 0.8744
+- **roc_auc**: 0.9499
+
+## Frustration
+
+- **accuracy**: 0.6921
+- **classification_report**: {'0': {'precision': 0.5964869480361064, 'recall': 0.8804465250270076, 'f1-score': 0.7111692844677138, 'support': 5554.0}, '1': {'precision': 0.8255899403935658, 'recall': 0.590699304784717, 'f1-score': 0.6886663942242202, 'support': 17117.0}, '2': {'precision': 0.6030350601779173, 'recall': 0.7861918406331013, 'f1-score': 0.6825396825396826, 'support': 7329.0}, 'accuracy': 0.6921, 'macro avg': {'precision': 0.6750373162025299, 'recall': 0.7524458901482753, 'f1-score': 0.6941251204105389, 'support': 30000.0}, 'weighted avg': {'precision': 0.7288051825051053, 'recall': 0.6921, 'f1-score': 0.6913356736400997, 'support': 30000.0}}
+- **confusion_matrix**: [[4890, 636, 28], [3241, 10111, 3765], [67, 1500, 5762]]
