@@ -60,8 +60,9 @@ class CodeExecutor:
                     c = client.containers.get(container_id)
                     c.kill()
                     c.remove(force=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger("robolearn").warning(f"Error cleaning up timed-out container: {e}")
             return {"stdout": "", "stderr": "Timeout: el código tardó demasiado en ejecutarse", "exit_code": -1, "timed_out": True}
         except docker.errors.DockerException as e:
             return {"stdout": "", "stderr": f"Error del sandbox: {str(e)}", "exit_code": -1, "timed_out": False}
@@ -72,8 +73,9 @@ class CodeExecutor:
                 try:
                     c = client.containers.get(container_id)
                     c.remove(force=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger("robolearn").warning(f"Error removing container {container_id}: {e}")
 
     def close(self):
         if self._client:

@@ -1,25 +1,24 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Response, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+<<<<<<< HEAD
 from fastapi.responses import JSONResponse
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+=======
+from contextlib import asynccontextmanager
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 import os
 import sys
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import settings
 from config.database_init import initialize_database
 from infrastructure.adapters.output.postgres.connection import PostgresConnection
-from infrastructure.adapters.output.postgres.user_repository_impl import UserRepositoryImpl
-from infrastructure.adapters.output.postgres.module_repository_impl import ModuleRepositoryImpl
-from infrastructure.adapters.output.postgres.enrollment_repository_impl import EnrollmentRepositoryImpl
-from infrastructure.adapters.output.postgres.teacher_repository_impl import TeacherRepositoryImpl
 from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
+<<<<<<< HEAD
 from application.services.ai_service_impl import AIServiceImpl
 from application.services.intelligent_tutor import IntelligentTutor
 from application.services.sandbox_service import SandboxService
@@ -40,234 +39,64 @@ from domain.entities.user import UserRole
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+=======
+from app.exceptions import register_error_handlers
+from app.logging_config import logger
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
-# ============================================
-# Security Configuration
-# ============================================
+# ---- Router Imports ----
+from infrastructure.adapters.input.auth_router import router as auth_router
+from infrastructure.adapters.input.users_router import router as users_router
+from infrastructure.adapters.input.modules_router import router as modules_router
+from infrastructure.adapters.input.exercises_router import router as exercises_router
+from infrastructure.adapters.input.challenges_router import router as challenges_router
+from infrastructure.adapters.input.classes_router import router as classes_router
+from infrastructure.adapters.input.ai_router import router as ai_router
+from infrastructure.adapters.input.analytics_router import router as analytics_router
+from infrastructure.adapters.input.dashboard_router import router as dashboard_router
+from infrastructure.adapters.input.admin_router import router as admin_router
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
-
-class TokenData(BaseModel):
-    user_id: int
-    email: str
-    role: str
-    exp: datetime
-
-class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    full_name: str
-    request_teacher: bool = False
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-class ChatRequest(BaseModel):
-    message: str
-
-class PublicChatRequest(BaseModel):
-    message: str
-    session_id: str
-    history: Optional[list] = []
-
-class ModuleCreate(BaseModel):
-    title: str
-    description: str
-    order: int = 0
-    is_published: bool = False
-
-class ModuleUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    order: Optional[int] = None
-    is_published: Optional[bool] = None
-    difficulty: Optional[str] = None
-    theory_content: Optional[str] = None
-
-class ExecuteRequest(BaseModel):
-    code: str
-
-class ProfileUpdate(BaseModel):
-    full_name: Optional[str] = None
-    email: Optional[str] = None
-    password: Optional[str] = None
-    avatar_url: Optional[str] = None
-    bio: Optional[str] = None
-
-# Classes Models
-class ClassCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    category: Optional[str] = None
-    difficulty: Optional[str] = None
-    is_published: bool = False
-
-class ClassUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    difficulty: Optional[str] = None
-    is_published: Optional[bool] = None
-
-class ClassModuleCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    theory_content: Optional[str] = None
-    order: int = 0
-
-class ClassModuleUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    theory_content: Optional[str] = None
-    order: Optional[int] = None
-
-class ClassExerciseCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    instructions: Optional[str] = None
-    exercise_type: str = "coding"
-    difficulty: int = 1
-    points: int = 10
-    order: int = 0
-    solution_output: Optional[str] = None
-    solution_type: Optional[str] = "output"
-    test_code: Optional[str] = None
-    metadata: Optional[dict] = None
-
-class ClassExerciseUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    instructions: Optional[str] = None
-    exercise_type: Optional[str] = None
-    difficulty: Optional[int] = None
-    points: Optional[int] = None
-    order: Optional[int] = None
-    solution_output: Optional[str] = None
-    solution_type: Optional[str] = None
-    test_code: Optional[str] = None
-    metadata: Optional[dict] = None
-
-class UserRoleUpdate(BaseModel):
-    role: str
-
-class ExerciseSubmit(BaseModel):
-    exercise_id: int
-    code: str
-    module_id: int
-    is_class_exercise: bool = False
-    class_module_id: Optional[int] = None
-
-class ModuleComplete(BaseModel):
-    module_id: int
-
-class LessonComplete(BaseModel):
-    module_id: int
-    lesson_id: int
-
-class ChallengeCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    instructions: Optional[str] = None
-    difficulty: int = 1
-    points: int = 100
-    base_code: Optional[str] = ""
-    solution_code: Optional[str] = None
-    solution_type: str = "output"
-    solution_output: Optional[str] = None
-    test_code: Optional[str] = None
-    deadline: Optional[str] = None
-    is_published: bool = False
-    max_attempts: int = 0
-
-class ChallengeSubmit(BaseModel):
-    challenge_id: int
-    code: str
-
-# New architecture models
-class ExerciseSuggestionRequest(BaseModel):
-    exercise_id: int
-    title: str
-    description: str
-    instructions: str
-    solution: str
-    difficulty: int
-
-class RAGIndexRequest(BaseModel):
-    text: str
-    source_type: str
-    source_id: int
-    metadata: Optional[dict] = None
-
-class RAGSearchRequest(BaseModel):
-    query: str
-    top_k: int = 5
-    source_type: Optional[str] = None
-
-class AITutorAskRequest(BaseModel):
-    message: str
-    student_level: str = "beginner"
-
-# ============================================
-# Lifespan Events
-# ============================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    print("Starting Robolearn API...")
-    
-    # Set Google credentials for Dialogflow if configured
+    logger.info("Starting Robolearn API...")
     if settings.google_credentials_path:
         cred_path = os.path.abspath(settings.google_credentials_path)
         if os.path.exists(cred_path):
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+<<<<<<< HEAD
             print(f"[OK] Google credentials loaded from: {cred_path}")
         else:
             print(f"[WARN] Google credentials file not found at: {cred_path}")
     
     # Initialize database (create if needed, migrate tables, seed data)
+=======
+            logger.info(f"Google credentials loaded from: {cred_path}")
+        else:
+            logger.warning(f"Google credentials file not found at: {cred_path}")
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
     initialize_database()
-    
     PostgresConnection.init_pool()
-    
     yield
-    
-    # Shutdown
-    print("Shutting down Robolearn API...")
+    logger.info("Shutting down Robolearn API...")
     PostgresConnection.close_pool()
     EventRepository.close()
 
-# ============================================
-# Initialize FastAPI App
-# ============================================
 
-app = FastAPI(
-    title="Robolearn API",
-    version="1.0.0",
-    lifespan=lifespan
-)
+app = FastAPI(title="Robolearn API", version="1.0.0", lifespan=lifespan)
 
-# ============================================
-# CORS Middleware
-# ============================================
+register_error_handlers(app)
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
-
+# ---- Middleware ----
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+<<<<<<< HEAD
 # ============================================
 # Mount Routers
 # ============================================
@@ -277,87 +106,42 @@ app.include_router(analytics_router)
 # ============================================
 # Utilities
 # ============================================
+=======
+AUDIT_PATHS = [
+    "/api/auth/", "/api/admin/", "/api/users/profile",
+    "/api/execute-code", "/api/exercises/submit",
+]
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT token"""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    print(f"GLOBAL ERROR: {type(exc).__name__}: {exc}")
-    import traceback
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"success": False, "detail": "Error interno del servidor"},
-    )
+@app.middleware("http")
+async def audit_logging(request: Request, call_next):
+    if any(request.url.path.startswith(p) for p in AUDIT_PATHS):
+        ip = request.client.host if request.client else "unknown"
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            ip = forwarded.split(",")[0].strip()
+        logger.info(f"[AUDIT] {ip} - {request.method} {request.url.path}")
+    response = await call_next(request)
+    return response
 
-async def verify_token(request: Request) -> TokenData:
-    """Verify JWT token from cookies"""
-    token = request.cookies.get("auth-token")
-    
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-    
-    try:
-        payload = jwt.decode(
-            token,
-            settings.secret_key,
-            algorithms=[settings.algorithm]
-        )
-        user_id: int = payload.get("user_id")
-        email: str = payload.get("email")
-        role: str = payload.get("role")
-        
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token"
-            )
-        return TokenData(
-            user_id=user_id,
-            email=email,
-            role=role,
-            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
-        )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
 
-async def verify_teacher(token_data: TokenData = Depends(verify_token)) -> TokenData:
-    """Verify user is a teacher or admin (checks DB for current role)"""
-    user = await user_repository.get_by_id(token_data.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.role not in [UserRole.TEACHER, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Requires teacher privileges"
-        )
-    return token_data
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if settings.node_env == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if "Content-Security-Policy" not in response.headers:
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+    return response
 
-async def verify_admin(token_data: TokenData = Depends(verify_token)) -> TokenData:
-    """Verify user is an admin"""
-    if token_data.role != UserRole.ADMIN.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Requires admin privileges"
-        )
-    return token_data
 
+<<<<<<< HEAD
 async def verify_token_optional(request: Request) -> Optional[TokenData]:
     """Verify JWT token from cookies — returns None if not authenticated"""
     token = request.cookies.get("auth-token")
@@ -407,13 +191,27 @@ exercise_generator_service = ExerciseGeneratorService(llm_service=llm_service)
 # ============================================
 # Routes - Health
 # ============================================
+=======
+# ---- Include Routers ----
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(modules_router)
+app.include_router(exercises_router)
+app.include_router(challenges_router)
+app.include_router(classes_router)
+app.include_router(ai_router)
+app.include_router(analytics_router)
+app.include_router(dashboard_router)
+app.include_router(admin_router)
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
+# ---- Health ----
 @app.get("/", tags=["Health"])
 async def root():
-    """Health check endpoint"""
     return {"message": "Robolearn API running", "version": "1.0.0"}
 
 @app.get("/health", tags=["Health"])
+<<<<<<< HEAD
 async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
@@ -4303,6 +4101,10 @@ async def http_exception_handler(request, exc):
         status_code=exc.status_code,
         content={"error": exc.detail},
     )
+=======
+async def health_check():
+    return {"success": True, "status": "healthy"}
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
 if __name__ == "__main__":
     import uvicorn

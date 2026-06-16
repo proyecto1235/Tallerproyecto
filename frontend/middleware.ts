@@ -2,11 +2,17 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { jwtVerify } from "jose"
 
+<<<<<<< HEAD
 const secret = process.env.JWT_SECRET
 if (!secret) {
   throw new Error("JWT_SECRET environment variable is required")
 }
 const JWT_SECRET = new TextEncoder().encode(secret)
+=======
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET
+)
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
 const publicPaths = ["/", "/login", "/register"]
 

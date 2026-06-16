@@ -1,7 +1,6 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
 bcrypt==3.2.0
 python-multipart==0.0.6
 pymongo==4.6.0
@@ -17,6 +16,10 @@ scipy==1.11.4
 apscheduler==3.10.4
 google-cloud-dialogflow==2.17.0
 requests==2.31.0
+<<<<<<< HEAD
+=======
+aiofiles==23.2.1
+>>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 docker==7.1.0
 redis[hiredis]==5.1.0
 httpx==0.27.0
