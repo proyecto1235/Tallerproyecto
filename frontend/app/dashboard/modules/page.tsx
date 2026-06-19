@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import API from "@/lib/api"
 
 const GLOBAL_MODULES = [
   { id: "g-1", title: "Introducción a Python", description: "Conoce el lenguaje, escribe tu primer programa y entiende la sintaxis básica.", level: 1, difficulty: "Principiante", lessons: 3, status: "in-progress", progress: 30 },
@@ -37,7 +38,7 @@ export default function ModulesPage() {
   useEffect(() => {
     const fetchModules = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/modules", { credentials: 'include' })
+        const res = await fetch(`${API}/modules`, { credentials: 'include' })
         const data = await res.json()
         if (data.success && data.modules) {
           const global = data.modules.filter((m: any) => m.is_global).sort((a: any, b: any) => a.order - b.order)
@@ -45,7 +46,7 @@ export default function ModulesPage() {
             // Fetch enrolled modules to get progress
             let enrolledMap: Record<string, any> = {}
             try {
-              const enrRes = await fetch("http://localhost:8000/api/modules/enrolled", { credentials: 'include' })
+              const enrRes = await fetch(`${API}/modules/enrolled`, { credentials: 'include' })
               const enrData = await enrRes.json()
               if (enrData.success) {
                 for (const m of enrData.modules) {
@@ -55,7 +56,9 @@ export default function ModulesPage() {
                   }
                 }
               }
-            } catch (_) {}
+            } catch (err) {
+              console.error("Error fetching enrollment data:", err)
+            }
 
             const mapped = global.map((m: any) => {
               const id = m.id.toString()
@@ -104,7 +107,9 @@ export default function ModulesPage() {
             return
           }
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error("Error processing modules:", err)
+      }
 
       setModules(GLOBAL_MODULES)
       setLoading(false)

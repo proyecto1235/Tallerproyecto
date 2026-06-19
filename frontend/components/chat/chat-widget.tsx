@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { MessageCircle, X, Send, Bot, User, Brain, Loader2, ChevronDown, AlertTriangle, WifiOff } from "lucide-react"
 import { toast } from "sonner"
+import API from "@/lib/api"
 
 interface Message {
   id: string
@@ -16,8 +17,7 @@ interface Message {
 }
 
 type ServiceState = "checking" | "available" | "dialogflow_only" | "ollama_only" | "none"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+
 const STORAGE_KEY = "robolearn_chat_history"
 const SESSION_KEY = "robolearn_chat_session"
 
@@ -110,7 +110,7 @@ export function ChatWidget() {
     if (checkedStatus.current) return
     checkedStatus.current = true
     try {
-      const res = await fetch(`${API_URL}/chatbot/status`)
+      const res = await fetch(`${API}/chatbot/status`)
       if (!res.ok) throw new Error("Status check failed")
       const data = await res.json()
       setServiceState(data.best_available || "none")
@@ -137,7 +137,7 @@ export function ChatWidget() {
     const sessionId = getSessionId()
 
     try {
-      const res = await fetch(`${API_URL}/chatbot/public`, {
+      const res = await fetch(`${API}/chatbot/public`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

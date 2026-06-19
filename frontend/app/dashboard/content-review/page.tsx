@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Shield, CheckCircle2, XCircle, Eye, FileText, BookOpen } from "lucide-react"
 import { toast } from "sonner"
+import API from "@/lib/api"
 
 const statusLabels: Record<string, string> = {
   pending_review: "Pendiente de Revisión",
@@ -36,7 +37,7 @@ export default function ContentReviewPage() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/admin/content-review", { credentials: 'include' })
+      const res = await fetch(`${API}/admin/content-review`, { credentials: 'include' })
       const data = await res.json()
       if (data.success) setItems(data.items)
     } catch (e) {
@@ -49,7 +50,7 @@ export default function ContentReviewPage() {
   const handleViewModule = async (moduleId: number) => {
     setModuleLoading(true)
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}`, { credentials: 'include' })
+      const res = await fetch(`${API}/admin/modules/${moduleId}`, { credentials: 'include' })
       const data = await res.json()
       if (data.success) setSelectedModule(data.module)
     } catch (e) {
@@ -61,7 +62,7 @@ export default function ContentReviewPage() {
 
   const handleApprove = async (moduleId: number) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}/approve`, {
+      const res = await fetch(`${API}/admin/modules/${moduleId}/approve`, {
         method: "POST", credentials: 'include'
       })
       const data = await res.json()
@@ -78,7 +79,7 @@ export default function ContentReviewPage() {
   const handleReject = async (moduleId: number) => {
     const feedback = prompt("Razón del rechazo (opcional):")
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}/reject`, {
+      const res = await fetch(`${API}/admin/modules/${moduleId}/reject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -98,7 +99,7 @@ export default function ContentReviewPage() {
   const handleApproveDeletion = async (moduleId: number) => {
     if (!confirm("¿Estás seguro de eliminar este módulo definitivamente?")) return
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/modules/${moduleId}/approve-deletion`, {
+      const res = await fetch(`${API}/admin/modules/${moduleId}/approve-deletion`, {
         method: "POST", credentials: 'include'
       })
       const data = await res.json()
@@ -175,7 +176,7 @@ export default function ContentReviewPage() {
             <CardContent>
               <Button variant="outline" className="w-full" onClick={async () => {
                 try {
-                  const res = await fetch("http://localhost:8000/api/admin/modules", { credentials: 'include' })
+                  const res = await fetch(`${API}/admin/modules`, { credentials: 'include' })
                   const data = await res.json()
                   if (data.success) {
                     const globalMods = data.modules.filter((m: any) => m.is_global)
@@ -265,7 +266,7 @@ export default function ContentReviewPage() {
                     <Button variant="outline" className="w-full" onClick={() => {
                       const content = prompt("Editar descripción del módulo:", selectedModule.description || "")
                       if (content) {
-                        fetch(`http://localhost:8000/api/admin/modules/${selectedModule.id}/content`, {
+                        fetch(`${API}/admin/modules/${selectedModule.id}/content`, {
                           method: "PUT",
                           headers: { "Content-Type": "application/json" },
                           credentials: 'include',

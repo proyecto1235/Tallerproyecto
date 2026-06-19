@@ -1,14 +1,17 @@
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient, ReturnDocument
 from config.settings import settings
 import asyncio
 
+logger = logging.getLogger(__name__)
 
 class BehavioralRepository:
     _client: Optional[MongoClient] = None
     _db = None
     _available: Optional[bool] = None
+    _warned: bool = False
 
     @classmethod
     async def _try_connect(cls):
@@ -29,15 +32,29 @@ class BehavioralRepository:
             cls._available = True
         else:
             cls._available = False
+            cls._warned = False
         return cls._available
 
     @classmethod
     async def get_db(cls):
         if cls._available is False:
+            if not cls._warned:
+                logger.warning(
+                    "[BehavioralRepository] MongoDB no disponible. "
+                    "Datos de comportamiento, sesiones y frustration signals no se persisten. "
+                    "Revisa MONGODB_URL en .env."
+                )
+                cls._warned = True
             return None
         if cls._db is None:
             ok = await cls._try_connect()
             if not ok:
+                if not cls._warned:
+                    logger.warning(
+                        "[BehavioralRepository] MongoDB no disponible. "
+                        "Datos de comportamiento no se persisten."
+                    )
+                    cls._warned = True
                 return None
         return cls._db
 

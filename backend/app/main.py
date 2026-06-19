@@ -193,18 +193,18 @@ async def register(request: RegisterRequest, response: Response):
 @app.post("/api/auth/login", tags=["Auth"])
 async def login(request: LoginRequest, response: Response):
     """Login user"""
-    print(f"DEBUG: Login attempt for {request.email}")
+    logger.debug(f"Login attempt for {request.email}")
 
     user = await user_repository.get_by_email(request.email)
     if not user:
-        print(f"DEBUG: User not found")
+        logger.debug("User not found")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    print(f"DEBUG: Found user, verifying password...")
+    logger.debug("Found user, verifying password...")
     try:
         is_valid = pwd_context.verify(request.password[:72], user.password_hash)
     except Exception as e:
-        print(f"DEBUG: bcrypt error: {type(e).__name__}: {e}")
+        logger.debug(f"bcrypt error: {type(e).__name__}: {e}")
         raise HTTPException(status_code=500, detail=f"Password verification error: {e}")
 
     if not is_valid:
@@ -229,10 +229,9 @@ async def login(request: LoginRequest, response: Response):
     )
 
     # Log event to MongoDB (fire-and-forget, don't block login)
-    import asyncio
     asyncio.create_task(event_repository.log_event("user_login", user.id, {"email": user.email}))
 
-    print(f"DEBUG: Login successful for {user.email}")
+    logger.debug(f"Login successful for {user.email}")
     return {
         "success": True,
         "user": {
@@ -442,7 +441,7 @@ async def predict_performance(
         "prediction": {
             "module_id": module_id,
             "score": score,
-            "confidence": 0.85
+            "confidence": 0.85 if score is not None else 0.0,
         }
     }
 
@@ -557,11 +556,11 @@ async def get_analytics_dashboard(
             timeout=5.0
         )
     except asyncio.TimeoutError:
-        print("[WARN] get_class_predictions timed out – triggering background warm")
+        logger.warning("get_class_predictions timed out – triggering background warm")
         class_preds = {"success": True, "students": [], "summary": {}, "processing": True}
         _try_warm_predictions(token_data.user_id)
     except Exception as e:
-        print(f"[WARN] get_class_predictions failed: {e}")
+        logger.warning(f"get_class_predictions failed: {e}")
         class_preds = {"success": True, "students": [], "summary": {}}
 
     daily_activity = []
@@ -591,9 +590,9 @@ async def get_analytics_dashboard(
                 ]).to_list(length=100), timeout=3.0
             )
     except asyncio.TimeoutError:
-        print("[WARN] MongoDB aggregates timed out")
+        logger.warning("MongoDB aggregates timed out")
     except Exception as e:
-        print(f"[WARN] MongoDB analytics fetch: {e}")
+        logger.warning(f"MongoDB analytics fetch: {e}")
 
     return {
         "success": True,
@@ -628,11 +627,11 @@ def _try_warm_predictions(teacher_id: int):
             if not uncached:
                 return
 
-            print(f"[Warm] Caching {len(uncached)} students...")
+            logger.info(f"Caching {len(uncached)} students...")
             ml_orchestrator.predict_batch(uncached)
-            print(f"[Warm] Cached {len(uncached)} students")
+            logger.info(f"Cached {len(uncached)} students")
         except Exception as e:
-            print(f"[Warm] Error: {e}")
+            logger.error(f"Warm error: {e}")
         finally:
             _try_warm_predictions._running = False
 
@@ -687,10 +686,9 @@ async def prewarm_predictions(
 
 async def _warm_predictions_async(student_ids: List[int]):
     """Background task: compute predictions for uncached students"""
-    import asyncio
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, ml_orchestrator.predict_batch, student_ids)
-    print(f"[MLOrchestrator] Background warm: cached {len(ml_orchestrator._prediction_cache)} students")
+    logger.info(f"Background warm: cached {len(ml_orchestrator._prediction_cache)} students")
 
 # ============================================
 # Routes - Intelligent Tutor (Conversational AI for Students)
@@ -713,7 +711,7 @@ async def tutor_ask(
     try:
         dialogflow_result = await ai_service.chat_with_dialogflow(session_id, request.message)
     except Exception as e:
-        print(f"[Tutor] Dialogflow fallback trigger: {e}")
+        logger.warning(f"Dialogflow fallback trigger: {e}")
 
     result = await intelligent_tutor.generate_response(
         message=request.message,
@@ -740,7 +738,7 @@ async def tutor_ask(
         )
         await behavioral_repo.update_engagement_score(user_id or 0, request.module_id)
     except Exception as e:
-        print(f"[Tutor] Log error: {e}")
+        logger.error(f"Tutor log error: {e}")
 
     return {
         "success": True,
@@ -875,7 +873,7 @@ async def tutor_feedback(
             "timestamp": datetime.now(timezone.utc),
         })
     except Exception as e:
-        print(f"[Tutor] Feedback log error: {e}")
+        logger.error(f"Tutor feedback log error: {e}")
 
     return {"success": True}
 
@@ -935,7 +933,7 @@ async def chat_public(request: PublicChatRequest):
         except Exception:
             pass
 
-    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
+    if dialogflow_response and dialogflow_response.strip() and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response:
         return {"success": True, "message": dialogflow_response, "session_id": session_id, "source": "dialogflow"}
 
     # Dialogflow fallback — check if Ollama is available first
@@ -999,7 +997,7 @@ async def chat(
         except Exception:
             pass
 
-    if dialogflow_response and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response and not ai_service.is_fallback_response(dialogflow_response):
+    if dialogflow_response and dialogflow_response.strip() and "Dialogflow not configured" not in dialogflow_response and "Error" not in dialogflow_response:
         await event_repository.log_chat_interaction(
             token_data.user_id,
             request.message,
@@ -1017,7 +1015,7 @@ async def chat(
     ai_was_unavailable = False
 
     # Ollama fallback when Dialogflow didn't understand, errored, or not configured
-    if not dialogflow_configured or (dialogflow_response and "Error" in dialogflow_response) or ai_service.is_fallback_response(dialogflow_response or ""):
+    if not dialogflow_configured or not dialogflow_response or "Error" in dialogflow_response:
         try:
             ollama_response = await ai_tutor_service.answer_question(
                 message=request.message,
@@ -1110,9 +1108,7 @@ async def execute_code(
 ):
     """Execute Python code for interactive exercises with security restrictions"""
     import io
-    import sys
     import ast
-    import signal
     from contextlib import redirect_stdout
     
     # Blacklisted patterns for basic security
@@ -2059,7 +2055,7 @@ async def check_and_award_achievements(user_id: int):
         
         return new_achievements
     except Exception as e:
-        print(f"[WARN] Achievement check error: {e}")
+        logger.warning(f"Achievement check error: {e}")
         return []
 
 @app.get("/api/achievements", tags=["Achievements"])
@@ -2655,7 +2651,7 @@ async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
                 if entry["day"] == day_name:
                     entry["puntos"] = ev.get("total_points", 0) or 0
     except Exception as e:
-        print(f"[WARN] MongoDB activity fetch failed: {e}")
+        logger.warning(f"MongoDB activity fetch failed: {e}")
 
     progress = {"completedLessons": 0, "totalLessons": 0, "currentModule": "Ninguno", "nextLesson": "Ninguno"}
     recent_achievements = []
@@ -2727,7 +2723,7 @@ async def get_student_dashboard(token_data: TokenData = Depends(verify_token)):
                 "streak_days": streak_days
             })
     except Exception as e:
-        print(f"[WARN] MongoDB snapshot failed: {e}")
+        logger.warning(f"MongoDB snapshot failed: {e}")
             
     return {
         "success": True,
@@ -2775,7 +2771,7 @@ async def get_admin_dashboard(token_data: TokenData = Depends(verify_admin)):
         db_stats["admin_stats"].insert_one({
             "timestamp": datetime.now(timezone.utc), **stats
         })
-    except:
+    except Exception:
         pass
             
     return {"success": True, "stats": stats}
@@ -2841,7 +2837,7 @@ async def admin_get_module(module_id: int, token_data: TokenData = Depends(verif
         if isinstance(val, str):
             try:
                 mod_data[field] = json.loads(val)
-            except:
+            except Exception:
                 mod_data[field] = []
         elif val is None:
             mod_data[field] = []
@@ -2991,7 +2987,7 @@ async def list_challenges(token_data: TokenData = Depends(verify_token)):
             if row[7]:
                 try:
                     deadline_str = row[7].isoformat() if hasattr(row[7], 'isoformat') else str(row[7])
-                except:
+                except Exception:
                     deadline_str = str(row[7])
             
             challenges.append({
@@ -3041,7 +3037,7 @@ async def get_challenge(challenge_id: int, token_data: TokenData = Depends(verif
             else:
                 deadline_dt = deadline
             deadline_passed = datetime.now(timezone.utc) > deadline_dt
-        except:
+        except Exception:
             pass
     
     # Get user attempts
@@ -3072,7 +3068,7 @@ async def get_challenge(challenge_id: int, token_data: TokenData = Depends(verif
     if deadline:
         try:
             deadline_str = deadline.isoformat() if hasattr(deadline, 'isoformat') else str(deadline)
-        except:
+        except Exception:
             deadline_str = str(deadline)
     
     return {
@@ -3104,7 +3100,7 @@ async def create_challenge(request: ChallengeCreate, token_data: TokenData = Dep
     if request.deadline:
         try:
             deadline_val = datetime.fromisoformat(request.deadline.replace('Z', '+00:00'))
-        except:
+        except Exception:
             deadline_val = None
     
     query = """
@@ -3154,7 +3150,7 @@ async def update_challenge(challenge_id: int, request: Request, token_data: Toke
             deadline_val = datetime.fromisoformat(body["deadline"].replace('Z', '+00:00'))
             fields.append("deadline = %s")
             values.append(deadline_val)
-        except:
+        except Exception:
             pass
     
     if not fields:
@@ -3221,7 +3217,7 @@ async def submit_challenge(
                 raise HTTPException(status_code=400, detail="Challenge deadline has passed")
         except HTTPException:
             raise
-        except:
+        except Exception:
             pass
     
     # Check max attempts
@@ -3665,6 +3661,24 @@ async def reject_enrollment(class_id: int, student_id: int, token_data: TokenDat
 @app.get("/api/classes/{class_id}/modules", tags=["Classes"])
 async def list_class_modules(class_id: int, token_data: TokenData = Depends(verify_token)):
     """List modules in a class"""
+    is_authorized = False
+    if token_data.role == "admin":
+        is_authorized = True
+    else:
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute("SELECT teacher_id FROM classes WHERE id = %s", (class_id,))
+            row = cursor.fetchone()
+            if row and row[0] == token_data.user_id:
+                is_authorized = True
+            else:
+                cursor.execute("""
+                    SELECT 1 FROM class_enrollments
+                    WHERE student_id = %s AND class_id = %s AND status = 'approved'
+                """, (token_data.user_id, class_id))
+                if cursor.fetchone():
+                    is_authorized = True
+    if not is_authorized:
+        raise HTTPException(status_code=403, detail="No estás matriculado en esta clase")
     query = """
         SELECT cm.id, cm.title, cm.description, cm.theory_content, cm."order",
                COUNT(DISTINCT ce.id) as exercise_count
@@ -3689,16 +3703,27 @@ async def get_class_module(
     class_id: int, module_id: int,
     token_data: TokenData = Depends(verify_token),
 ):
-    """Get a single class module with its exercises (enrollment required)"""
+    """Get a single class module with its exercises"""
 
-    with PostgresConnection.get_cursor() as cursor:
-        cursor.execute("""
-            SELECT status FROM class_enrollments
-            WHERE student_id = %s AND class_id = %s AND status = 'approved'
-        """, (token_data.user_id, class_id))
-        enrollment = cursor.fetchone()
-        if not enrollment:
-            raise HTTPException(status_code=403, detail="No estás matriculado en esta clase")
+    # Allow: class teacher, admin, or enrolled student
+    is_authorized = False
+    if token_data.role == "admin":
+        is_authorized = True
+    else:
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute("SELECT teacher_id FROM classes WHERE id = %s", (class_id,))
+            row = cursor.fetchone()
+            if row and row[0] == token_data.user_id:
+                is_authorized = True
+            else:
+                cursor.execute("""
+                    SELECT 1 FROM class_enrollments
+                    WHERE student_id = %s AND class_id = %s AND status = 'approved'
+                """, (token_data.user_id, class_id))
+                if cursor.fetchone():
+                    is_authorized = True
+    if not is_authorized:
+        raise HTTPException(status_code=403, detail="No estás matriculado en esta clase")
 
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
@@ -3790,6 +3815,24 @@ async def delete_class_module(class_id: int, module_id: int, token_data: TokenDa
 @app.get("/api/classes/{class_id}/modules/{module_id}/exercises", tags=["Classes"])
 async def list_class_exercises(class_id: int, module_id: int, token_data: TokenData = Depends(verify_token)):
     """List exercises for a class module"""
+    is_authorized = False
+    if token_data.role == "admin":
+        is_authorized = True
+    else:
+        with PostgresConnection.get_cursor() as cursor:
+            cursor.execute("SELECT teacher_id FROM classes WHERE id = %s", (class_id,))
+            row = cursor.fetchone()
+            if row and row[0] == token_data.user_id:
+                is_authorized = True
+            else:
+                cursor.execute("""
+                    SELECT 1 FROM class_enrollments
+                    WHERE student_id = %s AND class_id = %s AND status = 'approved'
+                """, (token_data.user_id, class_id))
+                if cursor.fetchone():
+                    is_authorized = True
+    if not is_authorized:
+        raise HTTPException(status_code=403, detail="No estás matriculado en esta clase")
     query = """
         SELECT ce.id, ce.title, ce.description, ce.instructions, ce.exercise_type,
                ce.difficulty, ce.points, ce."order", ce.metadata,
@@ -3938,7 +3981,7 @@ async def ai_tutor_ask(request: AITutorAskRequest, token_data: TokenData = Depen
         )
         return {"success": True, "response": response, "source": "llm_tutor"}
     except Exception as e:
-        print(f"[AI Tutor] Error: {e}")
+        logger.error(f"AI Tutor error: {e}")
         raise HTTPException(status_code=500, detail="Error al consultar el tutor")
 
 @app.post("/api/ai/tutor/hint", tags=["AI"])
@@ -3965,7 +4008,7 @@ async def ai_tutor_hint(request: Request, token_data: TokenData = Depends(verify
             )
         return {"success": True, "hint": response}
     except Exception as e:
-        print(f"[AI Hint] Error: {e}")
+        logger.error(f"AI Hint error: {e}")
         raise HTTPException(status_code=500, detail="Error al generar ayuda")
 
 @app.post("/api/ai/exercises/suggest", tags=["AI"])
@@ -3994,7 +4037,7 @@ async def ai_exercises_suggest(request: ExerciseSuggestionRequest, token_data: T
             saved.append({"id": sid, **s})
         return {"success": True, "suggestions": saved}
     except Exception as e:
-        print(f"[Exercise Gen] Error: {e}")
+        logger.error(f"Exercise Gen error: {e}")
         raise HTTPException(status_code=500, detail="Error al generar sugerencias")
 
 @app.get("/api/ai/exercises/suggestions", tags=["AI"])

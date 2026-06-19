@@ -13,8 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 interface ClassModule {
   id: string
@@ -34,12 +33,24 @@ interface EnrollmentRequest {
   enrolled_at: string
 }
 
+interface ClassData {
+  id: number
+  title: string
+  description: string
+  category: string
+  difficulty: string
+  teacher_id: number
+  is_published: boolean
+  teacher_name: string
+  modules?: ClassModule[]
+}
+
 export default function ClassDetailPage() {
   const params = useParams()
   const router = useRouter()
   const classId = parseInt(params.id as string, 10)
 
-  const [cls, setCls] = useState<any>(null)
+  const [cls, setCls] = useState<ClassData | null>(null)
   const [modules, setModules] = useState<ClassModule[]>([])
   const [requests, setRequests] = useState<EnrollmentRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,21 +86,8 @@ export default function ClassDetailPage() {
       if (reqData.success) {
         setRequests(reqData.requests || [])
       }
-    } catch (_) {
-      // Fallback to localStorage
-      const saved = localStorage.getItem("robolearn_teacher_classes")
-      if (saved) {
-        const all = JSON.parse(saved)
-        const found = all.find((c: any) => c.id === params.id)
-        if (found) {
-          setCls(found)
-          setModules((found.modules || []).map((m: any, i: number) => ({
-            ...m,
-            exercise_count: m.exercises?.length || 0,
-            order: m.order || i + 1
-          })))
-        }
-      }
+    } catch (err) {
+      console.error("Error loading class data:", err)
     }
     setLoading(false)
   }
@@ -107,7 +105,8 @@ export default function ClassDetailPage() {
       } else {
         toast.error(data.error || "Error al procesar solicitud")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al procesar solicitud:", err)
       toast.error("Error de conexión")
     }
   }
@@ -130,7 +129,8 @@ export default function ClassDetailPage() {
       } else {
         toast.error(data.error || "Error al eliminar módulo")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al eliminar módulo:", err)
       toast.error("Error de conexión")
     }
     setConfirmDelete(null)
@@ -294,7 +294,8 @@ export default function ClassDetailPage() {
                 } else {
                   toast.error(data.error || "Error al crear módulo")
                 }
-              } catch (_) {
+              } catch (err) {
+                console.error("Error al crear módulo:", err)
                 toast.error("Error de conexión")
               }
               setNewModule({ title: "", description: "" })

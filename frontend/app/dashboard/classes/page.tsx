@@ -8,8 +8,7 @@ import { Search, BookOpen, Users, Clock, Loader2, CheckCircle2, XCircle, Hourgla
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "sonner"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function ClassesPage() {
   const { user } = useAuth()
@@ -41,17 +40,8 @@ export default function ClassesPage() {
         setEnrolledClasses(classes.filter((c: any) => c.enrollment_status === "approved"))
         setPendingRequests(classes.filter((c: any) => c.enrollment_status === "pending"))
       }
-    } catch (_) {
-      // Fallback to localStorage
-      try {
-        const saved = localStorage.getItem("robolearn_classes")
-        if (saved) {
-          const all = JSON.parse(saved)
-          if (Array.isArray(all)) {
-            setAvailableClasses(all.filter((c: any) => c.is_published))
-          }
-        }
-      } catch (_) {}
+    } catch (err) {
+      console.error("Error loading classes:", err)
     }
     setIsLoading(false)
   }
@@ -85,7 +75,8 @@ export default function ClassesPage() {
         requestingRef.current = null
         return
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al matricular:", err)
       toast.error("Error de conexión")
     }
     setRequestingId(null)
@@ -101,7 +92,9 @@ export default function ClassesPage() {
         setEnrolledClasses(classes.filter((c: any) => c.enrollment_status === "approved"))
         setPendingRequests(classes.filter((c: any) => c.enrollment_status === "pending"))
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error("Error refreshing enrollments:", err)
+    }
   }
 
   const filteredClasses = availableClasses.filter(c =>

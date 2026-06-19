@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 const COLORS = {
   engagement: "#3b82f6",
@@ -32,7 +32,7 @@ export default function MisMetricasPage() {
     if (!user?.id) return
     const fetchMetrics = async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/student/${user.id}`, { credentials: "include" })
+        const res = await fetch(`${API}/analytics/student/${user.id}`, { credentials: "include" })
         const json = await res.json()
         if (json.success) {
           setData(json)

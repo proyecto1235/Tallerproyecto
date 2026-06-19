@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Play, RotateCcw, CheckCircle2, XCircle, Zap, Code2, Terminal, Loader2, Eye, Trophy } from "lucide-react"
 import { toast } from "sonner"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function ExercisesPage() {
   const [exercises, setExercises] = useState<any[]>([])
@@ -30,7 +30,7 @@ export default function ExercisesPage() {
   useEffect(() => {
     const fetchExercises = async () => {
       try {
-        const res = await fetch(`${API_URL}/exercises`, {
+        const res = await fetch(`${API}/exercises`, {
           credentials: 'include'
         })
         const data = await res.json()
@@ -86,7 +86,7 @@ export default function ExercisesPage() {
     setShowSolution(false)
 
     try {
-      const res = await fetch(`${API_URL}/exercises/submit`, {
+      const res = await fetch(`${API}/exercises/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',

@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from infrastructure.adapters.output.mongo.student_metrics_repository import StudentMetricsRepository
+
+logger = logging.getLogger(__name__)
 from infrastructure.adapters.output.mongo.weekly_metrics_repository import WeeklyMetricsRepository
 from infrastructure.adapters.output.mongo.ml_predictions_repository import MLPredictionsRepository
 from domain.analytics.weekly_metrics import WeeklyStudentMetrics
@@ -41,14 +44,14 @@ class AnalyticsScheduler:
             self._scheduler.shutdown(wait=False)
 
     async def _generate_weekly_snapshot(self):
-        print("[AnalyticsScheduler] Generating weekly snapshot...")
+        logger.info("Generando snapshot semanal...")
         now = datetime.now(timezone.utc)
         week_number = now.isocalendar()[1]
         year = now.year
 
         all_metrics = await self._student_metrics_repo.get_all_metrics()
         if not all_metrics:
-            print("[AnalyticsScheduler] No student metrics found.")
+            logger.warning("No se encontraron métricas de estudiantes.")
             return
 
         for sm in all_metrics:
@@ -90,17 +93,17 @@ class AnalyticsScheduler:
                         )
                         await self._ml_repo.save_predictions(mlp)
                     except Exception as e:
-                        print(f"[AnalyticsScheduler] ML prediction error for student {sm.student_id}: {e}")
+                        logger.warning(f"Error en predicción ML para student {sm.student_id}: {e}")
             except Exception as e:
-                print(f"[AnalyticsScheduler] Error processing student {sm.student_id}: {e}")
+                logger.warning(f"Error procesando student {sm.student_id}: {e}")
 
-        print(f"[AnalyticsScheduler] Weekly snapshot complete: {len(all_metrics)} students")
+        logger.info(f"Snapshot semanal completado: {len(all_metrics)} estudiantes")
 
     async def _generate_daily_snapshot(self):
-        print("[AnalyticsScheduler] Daily metrics check...")
+        logger.info("Verificación diaria de métricas...")
         all_metrics = await self._student_metrics_repo.get_all_metrics()
         if all_metrics:
-            print(f"[AnalyticsScheduler] {len(all_metrics)} active students tracked")
+            logger.info(f"{len(all_metrics)} estudiantes activos registrados")
 
     async def trigger_weekly_now(self):
         await self._generate_weekly_snapshot()

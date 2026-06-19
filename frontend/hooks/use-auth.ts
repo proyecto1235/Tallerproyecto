@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import API from "@/lib/api"
 
 export interface User {
   id: number
@@ -19,8 +20,6 @@ interface AuthState {
   isLoading: boolean
   isAuthenticated: boolean
 }
-
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
 
 function mapBackendUserToFrontend(backendData: any): User {
   return {
@@ -47,7 +46,7 @@ export function useAuth() {
 
   const checkSession = async () => {
     try {
-      const res = await fetch(`${API_URL}/users/profile`, {
+      const res = await fetch(`${API}/users/profile`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -93,7 +92,7 @@ export function useAuth() {
   useEffect(() => { checkSession() }, [])
 
   const login = async (email: string, password: string) => {
-    const res = await fetch(`${API_URL}/auth/login`, {
+    const res = await fetch(`${API}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -126,7 +125,7 @@ export function useAuth() {
     fullName: string,
     requestTeacher: boolean = false
   ) => {
-    const res = await fetch(`${API_URL}/auth/register`, {
+    const res = await fetch(`${API}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

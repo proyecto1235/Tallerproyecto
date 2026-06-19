@@ -15,7 +15,7 @@ import {
   GitBranch, Activity,
 } from "lucide-react"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
 
@@ -35,7 +35,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const dashRes = await fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" })
+        const dashRes = await fetch(`${API}/analytics/dashboard?days=30`, { credentials: "include" })
         const json = await dashRes.json()
         if (json.success) {
           const cp = json.class_predictions || {}
@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
 
     const fetchDifficulty = async () => {
       try {
-        const diffRes = await fetch(`${API_URL}/exercises/difficulty-analysis`, { credentials: "include" })
+        const diffRes = await fetch(`${API}/exercises/difficulty-analysis`, { credentials: "include" })
         const diffJson = await diffRes.json()
         if (diffJson.success) {
           setDifficultyAnalysis(diffJson.suggestions || [])
@@ -66,7 +66,7 @@ export default function AnalyticsPage() {
 
     const fetchRiskStudents = async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/risk-students?min_dropout_risk=0.3`, { credentials: "include" })
+        const res = await fetch(`${API}/analytics/risk-students?min_dropout_risk=0.3`, { credentials: "include" })
         const json = await res.json()
         if (json.success) setRiskStudents(json.risk_students || [])
       } catch {}
@@ -74,7 +74,7 @@ export default function AnalyticsPage() {
 
     const fetchClusters = async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/clusters`, { credentials: "include" })
+        const res = await fetch(`${API}/analytics/clusters`, { credentials: "include" })
         const json = await res.json()
         if (json.success) setClusters(json)
       } catch {}
@@ -82,7 +82,7 @@ export default function AnalyticsPage() {
 
     const fetchAnomalies = async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/anomalies`, { credentials: "include" })
+        const res = await fetch(`${API}/analytics/anomalies`, { credentials: "include" })
         const json = await res.json()
         if (json.success) setAnomalies(json.anomalies || [])
       } catch {}
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
 
     const timeout = setTimeout(async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" })
+        const res = await fetch(`${API}/analytics/dashboard?days=30`, { credentials: "include" })
         const json = await res.json()
         if (json.success) {
           const cp = json.class_predictions || {}

@@ -9,8 +9,7 @@ import { Loader2, ArrowLeft, BookOpen, CheckCircle2, ChevronRight, FileText, Use
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function ClassDetailsPage() {
   const params = useParams()
@@ -60,26 +59,8 @@ export default function ClassDetailsPage() {
       } else {
         setErrorMsg("Clase no encontrada")
       }
-    } catch (_) {
-      try {
-        const saved = localStorage.getItem("robolearn_classes")
-        if (saved) {
-          const all = JSON.parse(saved)
-          if (Array.isArray(all)) {
-            const found = all.find((c: any) => c.id === classId)
-            if (found) {
-              setClassData(found)
-              setModules((found.modules || []).map((m: any, i: number) => ({
-                ...m,
-                exercise_count: m.exercises?.length || 0,
-                order: m.order || i + 1
-              })))
-            } else {
-              setErrorMsg("Clase no encontrada")
-            }
-          }
-        }
-      } catch (_) {}
+    } catch (err) {
+      console.error("Error loading class details:", err)
     }
     setIsLoading(false)
   }
@@ -99,7 +80,8 @@ export default function ClassDetailsPage() {
       } else {
         toast.error(data.error || "Error al solicitar matrícula")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al solicitar matrícula:", err)
       toast.error("Error de conexión")
     }
     setRequesting(false)

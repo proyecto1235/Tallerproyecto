@@ -136,7 +136,6 @@ main_module.ai_service.predict_student_performance = AsyncMock(
 main_module.ai_service.chat_with_dialogflow = AsyncMock(
     return_value="Hello from Dialogflow"
 )
-main_module.ai_service.is_fallback_response = MagicMock(return_value=False)
 main_module.ai_service.get_recommendations = AsyncMock(return_value=[])
 
 main_module.ml_orchestrator = MagicMock()

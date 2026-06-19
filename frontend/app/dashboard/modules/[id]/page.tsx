@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function ModuleViewPage() {
   const { id } = useParams<{ id: string }>()
@@ -37,9 +37,9 @@ export default function ModuleViewPage() {
     setError(null)
     try {
       const [modRes, progRes, lessRes] = await Promise.all([
-        fetch(`${API_URL}/modules/${numericId}`, { credentials: "include" }),
-        fetch(`${API_URL}/modules/${numericId}/progress`, { credentials: "include" }),
-        fetch(`${API_URL}/modules/${numericId}/lessons`, { credentials: "include" }),
+        fetch(`${API}/modules/${numericId}`, { credentials: "include" }),
+        fetch(`${API}/modules/${numericId}/progress`, { credentials: "include" }),
+        fetch(`${API}/modules/${numericId}/lessons`, { credentials: "include" }),
       ])
       const modData = await modRes.json()
       const progData = await progRes.json()
@@ -68,7 +68,7 @@ export default function ModuleViewPage() {
   }
 
   function refreshLessonData() {
-    fetch(`${API_URL}/modules/${numericId}/lessons`, { credentials: "include" })
+    fetch(`${API}/modules/${numericId}/lessons`, { credentials: "include" })
       .then(r => r.json())
       .then(data => {
         if (data.success && data.lessons) {
@@ -96,7 +96,7 @@ export default function ModuleViewPage() {
   async function handleCompleteModule() {
     setCompleting(true)
     try {
-      const res = await fetch(`${API_URL}/modules/complete`, {
+      const res = await fetch(`${API}/modules/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -130,12 +130,14 @@ export default function ModuleViewPage() {
 
   async function completeLesson(lessonId: number) {
     try {
-      await fetch(`${API_URL}/lessons/${lessonId}/complete`, {
+      await fetch(`${API}/lessons/${lessonId}/complete`, {
         method: "POST",
         credentials: "include"
       })
       refreshLessonData()
-    } catch (_) {}
+    } catch (err) {
+      console.error("Error completing lesson:", err)
+    }
   }
 
   async function handleNextLesson(lesson: any, nextLessonId: number) {

@@ -12,13 +12,12 @@ import { toast } from "sonner"
 import dynamic from "next/dynamic"
 import { python } from "@codemirror/lang-python"
 import { Trophy, ArrowLeft, Loader2, Code } from "lucide-react"
+import API from "@/lib/api"
 
 const CodeEditor = dynamic(
   () => import("@uiw/react-codemirror").then(mod => ({ default: mod.default })),
   { ssr: false }
 )
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 export default function CreateChallengePage() {
   const router = useRouter()

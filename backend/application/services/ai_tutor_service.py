@@ -1,7 +1,10 @@
+import logging
 from typing import Optional
 from application.services.llm_service import LLMService
 from application.services.rag_service import RAGService
 from infrastructure.adapters.output.redis.cache import AICache
+
+logger = logging.getLogger(__name__)
 
 TUTOR_SYSTEM_PROMPT = """Eres un tutor de programación de RoboLearn, una plataforma educativa para niños y jóvenes.
 Siempre responde en español, con lenguaje claro, motivador y apropiado para la edad del estudiante.
@@ -39,7 +42,7 @@ class AITutorService:
             try:
                 rag_context = await self.rag.build_context(message)
             except Exception as e:
-                print(f"[AITutor] RAG unavailable: {e}")
+                logger.warning(f"RAG no disponible para answer_question: {e}")
 
         context_str = ""
         if rag_context:
@@ -60,7 +63,7 @@ class AITutorService:
             try:
                 rag_context = await self.rag.build_context(error_message, top_k=2)
             except Exception as e:
-                print(f"[AITutor] RAG unavailable for hint: {e}")
+                logger.warning(f"RAG no disponible para hint: {e}")
 
         prompt = f"""El estudiante está resolviendo este ejercicio:
 Título: {exercise_title}
@@ -92,7 +95,7 @@ Nivel: {student_level}.
             try:
                 rag_context = await self.rag.build_context(concept, top_k=3)
             except Exception as e:
-                print(f"[AITutor] RAG unavailable for concept: {e}")
+                logger.warning(f"RAG no disponible para explain_concept: {e}")
 
         context_str = ""
         if rag_context:

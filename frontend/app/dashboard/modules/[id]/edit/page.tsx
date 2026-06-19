@@ -23,7 +23,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 interface Lesson {
   id: number
@@ -71,7 +71,7 @@ export default function AdminModuleEditPage() {
   async function loadModule() {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/modules/${moduleId}`, { credentials: "include" })
+      const res = await fetch(`${API}/modules/${moduleId}`, { credentials: "include" })
       const data = await res.json()
       if (data.success && data.module) {
         const m = data.module
@@ -83,7 +83,8 @@ export default function AdminModuleEditPage() {
       } else {
         toast.error("Módulo no encontrado")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error loading module:", err)
       toast.error("Error al cargar módulo")
     }
     setLoading(false)
@@ -92,7 +93,7 @@ export default function AdminModuleEditPage() {
   async function handleSave() {
     setSaving(true)
     try {
-      const res = await fetch(`${API_URL}/modules/${moduleId}`, {
+      const res = await fetch(`${API}/modules/${moduleId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -104,7 +105,8 @@ export default function AdminModuleEditPage() {
       } else {
         toast.error(data.error || "Error al actualizar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error saving module:", err)
       toast.error("Error de conexión")
     }
     setSaving(false)
@@ -113,7 +115,7 @@ export default function AdminModuleEditPage() {
   async function handleSaveTheory() {
     setSaving(true)
     try {
-      const res = await fetch(`${API_URL}/modules/${moduleId}`, {
+      const res = await fetch(`${API}/modules/${moduleId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -125,7 +127,8 @@ export default function AdminModuleEditPage() {
       } else {
         toast.error(data.error || "Error al guardar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error saving theory:", err)
       toast.error("Error de conexión")
     }
     setSaving(false)
@@ -145,8 +148,8 @@ export default function AdminModuleEditPage() {
     if (!editingLesson?.title?.trim()) { toast.error("El título es obligatorio"); return }
     const isNew = !editingLesson.id
     const url = isNew
-      ? `${API_URL}/modules/${moduleId}/lessons`
-      : `${API_URL}/modules/${moduleId}/lessons/${editingLesson.id}`
+      ? `${API}/modules/${moduleId}/lessons`
+      : `${API}/modules/${moduleId}/lessons/${editingLesson.id}`
     try {
       const res = await fetch(url, {
         method: isNew ? "POST" : "PUT",
@@ -163,13 +166,14 @@ export default function AdminModuleEditPage() {
         toast.success(isNew ? "Lección creada" : "Lección actualizada")
         setShowLessonDialog(false)
         setEditingLesson(null)
-        const modRes = await fetch(`${API_URL}/modules/${moduleId}`, { credentials: "include" })
+        const modRes = await fetch(`${API}/modules/${moduleId}`, { credentials: "include" })
         const modData = await modRes.json()
         if (modData.success) setLessons(modData.module.lessons || [])
       } else {
         toast.error(data.error || "Error al guardar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error saving lesson:", err)
       toast.error("Error de conexión")
     }
   }
@@ -177,7 +181,7 @@ export default function AdminModuleEditPage() {
   async function deleteLesson(id: number) {
     if (!confirm("¿Eliminar esta lección y todos sus ejercicios?")) return
     try {
-      const res = await fetch(`${API_URL}/modules/${moduleId}/lessons/${id}`, {
+      const res = await fetch(`${API}/modules/${moduleId}/lessons/${id}`, {
         method: "DELETE", credentials: "include"
       })
       const data = await res.json()
@@ -187,7 +191,8 @@ export default function AdminModuleEditPage() {
       } else {
         toast.error(data.error || "Error al eliminar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error deleting lesson:", err)
       toast.error("Error de conexión")
     }
   }
@@ -211,8 +216,8 @@ export default function AdminModuleEditPage() {
     if (!selectedLesson || !editingExercise?.title?.trim()) { toast.error("El título es obligatorio"); return }
     const isNew = !editingExercise.id
     const url = isNew
-      ? `${API_URL}/modules/${moduleId}/exercises`
-      : `${API_URL}/modules/${moduleId}/exercises/${editingExercise.id}`
+      ? `${API}/modules/${moduleId}/exercises`
+      : `${API}/modules/${moduleId}/exercises/${editingExercise.id}`
     try {
       const res = await fetch(url, {
         method: isNew ? "POST" : "PUT",
@@ -234,13 +239,14 @@ export default function AdminModuleEditPage() {
         toast.success(isNew ? "Ejercicio creado" : "Ejercicio actualizado")
         setShowExerciseDialog(false)
         setEditingExercise(null)
-        const modRes = await fetch(`${API_URL}/modules/${moduleId}`, { credentials: "include" })
+        const modRes = await fetch(`${API}/modules/${moduleId}`, { credentials: "include" })
         const modData = await modRes.json()
         if (modData.success) setLessons(modData.module.lessons || [])
       } else {
         toast.error(data.error || "Error al guardar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error saving exercise:", err)
       toast.error("Error de conexión")
     }
   }
@@ -248,19 +254,20 @@ export default function AdminModuleEditPage() {
   async function deleteExercise(lessonId: number, exerciseId: number) {
     if (!confirm("¿Eliminar este ejercicio?")) return
     try {
-      const res = await fetch(`${API_URL}/modules/${moduleId}/exercises/${exerciseId}`, {
+      const res = await fetch(`${API}/modules/${moduleId}/exercises/${exerciseId}`, {
         method: "DELETE", credentials: "include"
       })
       const data = await res.json()
       if (data.success) {
         toast.success("Ejercicio eliminado")
-        const modRes = await fetch(`${API_URL}/modules/${moduleId}`, { credentials: "include" })
+        const modRes = await fetch(`${API}/modules/${moduleId}`, { credentials: "include" })
         const modData = await modRes.json()
         if (modData.success) setLessons(modData.module.lessons || [])
       } else {
         toast.error(data.error || "Error al eliminar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error deleting exercise:", err)
       toast.error("Error de conexión")
     }
   }

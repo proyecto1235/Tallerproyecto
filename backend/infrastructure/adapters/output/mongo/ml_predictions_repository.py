@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, List
 from datetime import datetime, timezone
 from pymongo import MongoClient
@@ -5,11 +6,13 @@ from config.settings import settings
 from domain.analytics.ml_predictions import MLPrediction
 import asyncio
 
+logger = logging.getLogger(__name__)
 
 class MLPredictionsRepository:
     _client: Optional[MongoClient] = None
     _db = None
     _available: Optional[bool] = None
+    _warned: bool = False
 
     @classmethod
     async def _try_connect(cls):
@@ -30,15 +33,29 @@ class MLPredictionsRepository:
             cls._available = True
         else:
             cls._available = False
+            cls._warned = False
         return cls._available
 
     @classmethod
     async def get_db(cls):
         if cls._available is False:
+            if not cls._warned:
+                logger.warning(
+                    "[MLPredictionsRepository] MongoDB no disponible. "
+                    "Predicciones ML no se persisten ni consultan. "
+                    "Revisa MONGODB_URL en .env."
+                )
+                cls._warned = True
             return None
         if cls._db is None:
             ok = await cls._try_connect()
             if not ok:
+                if not cls._warned:
+                    logger.warning(
+                        "[MLPredictionsRepository] MongoDB no disponible. "
+                        "Predicciones ML no disponibles."
+                    )
+                    cls._warned = True
                 return None
         return cls._db
 

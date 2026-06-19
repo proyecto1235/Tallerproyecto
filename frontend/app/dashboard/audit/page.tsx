@@ -4,8 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Activity, ShieldAlert, CheckCircle, Clock, Database, Server, Users, RefreshCw, Loader2 } from "lucide-react"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function AuditPage() {
   const [logs, setLogs] = useState<any[]>([])
@@ -40,7 +39,8 @@ export default function AuditPage() {
           users: statData.stats.activeStudents || 0,
         })
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error fetching audit stats:", err)
       setStats({ server: "Fuera de línea", db: "Desconectada", users: 0 })
     }
     setLoading(false)

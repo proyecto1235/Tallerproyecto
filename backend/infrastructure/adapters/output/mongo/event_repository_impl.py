@@ -1,3 +1,4 @@
+import logging
 from typing import List, Dict, Any, Optional
 from pymongo import MongoClient, errors
 from datetime import datetime
@@ -5,14 +6,17 @@ from bson import ObjectId
 from config.settings import settings
 import asyncio
 
+logger = logging.getLogger(__name__)
+
 class EventRepository:
     """MongoDB implementation for event/metrics storage - degrades gracefully if MongoDB is unavailable.
     All MongoDB operations run in a thread executor to avoid blocking the event loop."""
-    
+
     _client: Optional[MongoClient] = None
     _db = None
     _available: Optional[bool] = None  # None = not yet checked
-    
+    _warned: bool = False
+
     @classmethod
     async def _try_connect(cls):
         """Try connecting to MongoDB once, in a thread (non-blocking)"""
@@ -33,16 +37,29 @@ class EventRepository:
             cls._available = True
         else:
             cls._available = False
+            cls._warned = False
         return cls._available
-    
+
     @classmethod
     async def get_db(cls):
         """Get MongoDB database instance (returns None if unavailable)"""
         if cls._available is False:
+            if not cls._warned:
+                logger.warning(
+                    "[EventRepository] MongoDB no disponible. Los eventos y métricas no se persisten. "
+                    "Revisa la conexión a MongoDB (MONGODB_URL en .env)."
+                )
+                cls._warned = True
             return None
         if cls._db is None:
             ok = await cls._try_connect()
             if not ok:
+                if not cls._warned:
+                    logger.warning(
+                        "[EventRepository] MongoDB no disponible. Los eventos y métricas no se persisten. "
+                        "Revisa la conexión a MongoDB (MONGODB_URL en .env)."
+                    )
+                    cls._warned = True
                 return None
         return cls._db
     

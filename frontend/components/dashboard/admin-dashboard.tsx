@@ -22,6 +22,7 @@ import {
   ArrowRight,
 } from "lucide-react"
 import Link from "next/link"
+import API from "@/lib/api"
 
 interface AdminDashboardProps {
   user: User
@@ -48,7 +49,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+        const api = API
         const [statsRes, auditRes] = await Promise.all([
           fetch(`${api}/dashboard/admin`, { credentials: "include" }),
           fetch(`${api}/admin/audit-logs?limit=5`, { credentials: "include" }),
@@ -88,7 +89,9 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
               }))
             )
           }
-        } catch (_) {}
+        } catch (err) {
+          console.error("Error fetching recent users:", err)
+        }
       } catch (error) {
         console.error("Error fetching admin data", error)
       } finally {

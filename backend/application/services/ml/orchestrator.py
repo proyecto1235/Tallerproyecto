@@ -1,4 +1,7 @@
+import logging
 from typing import Dict, List, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class MLOrchestrator:
@@ -26,9 +29,9 @@ class MLOrchestrator:
             self.engagement, self.performance, self.dropout, self.frustration,
         ])
         if not models_loaded or not self.clustering._is_trained or not self.anomaly._is_trained:
-            print("[MLOrchestrator] WARNING: Some models not found. Run ml_pipeline/run_all.py first.")
+            logger.warning("Algunos modelos no encontrados. Ejecute ml_pipeline/run_all.py primero.")
 
-        print("[MLOrchestrator] Using real data from MongoDB for predictions (fallback: synthetic dataset)")
+        logger.info("Usando datos reales de MongoDB para predicciones (fallback: synthetic dataset)")
 
     def reload_models(self) -> Dict[str, bool]:
         status = {}
@@ -40,7 +43,7 @@ class MLOrchestrator:
         ]:
             loaded = predictor.load()
             status[name] = loaded
-            print(f"[MLOrchestrator] Reloaded {name}: {'OK' if loaded else 'FAILED'}")
+            logger.info(f"Modelo recargado {name}: {'OK' if loaded else 'FAILED'}")
 
         status["clustering"] = self.clustering._load()
         status["anomaly"] = self.anomaly._load()
@@ -59,7 +62,7 @@ class MLOrchestrator:
         from .synthetic_dataset import generate_dataset, extract_for_student
         if self._synthetic_df is None:
             self._synthetic_df = generate_dataset()
-            print(f"[MLOrchestrator] Fallback synthetic dataset: {len(self._synthetic_df)} rows, "
+            logger.info(f"Fallback synthetic dataset: {len(self._synthetic_df)} rows, "
                   f"{self._synthetic_df['student_id'].nunique()} students")
         student_df = self._synthetic_df[self._synthetic_df["student_id"] == student_id]
         if len(student_df) == 0:

@@ -3,16 +3,14 @@
 import { useEffect } from "react"
 import { Loader2, Code } from "lucide-react"
 import { clearAuthCookies } from "@/app/actions/auth"
+import API from "@/lib/api"
 
 export default function LogoutPage() {
   useEffect(() => {
     let mounted = true;
 
     async function doLogout() {
-      // 1. Limpiar local storage
-      localStorage.removeItem("mock_session")
-      
-      // 2. Limpiar cookie segura mediante Server Action
+      // 1. Limpiar cookie segura mediante Server Action
       try {
         await clearAuthCookies()
       } catch (e) {
@@ -21,10 +19,9 @@ export default function LogoutPage() {
 
       // 3. Opcional: Llamar al endpoint de logout del backend si es necesario
       try {
-        const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 1000)
-        await fetch(`${API_URL}/auth/logout`, { 
+        await fetch(`${API}/auth/logout`, { 
           method: "POST",
           credentials: "include",
           signal: controller.signal

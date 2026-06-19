@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, AlertTriangle, Clock, Zap, Lightbulb, User, BookOpen } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import API from "@/lib/api"
 
 interface AIAlert {
   id: string
@@ -35,7 +36,7 @@ export default function AlertsPage() {
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/teacher/alerts", {
+        const res = await fetch(`${API}/teacher/alerts`, {
           credentials: 'include'
         })
         const data = await res.json()

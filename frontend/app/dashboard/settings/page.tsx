@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner"
 import { Settings2, User, Bell, Shield, Palette, Loader2, CheckCircle2, Sun, Moon, Share2, Trash2, Link2, MessageCircle, Globe, ExternalLink } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import API from "@/lib/api"
 
 const profileFormSchema = z.object({
   username: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
@@ -48,8 +49,7 @@ const PREDEFINED_AVATARS = [
   "https://api.dicebear.com/7.x/bottts/svg?seed=Nexus",
 ]
 
-// API URL with environment variable fallback
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
+
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
@@ -124,7 +124,7 @@ export default function SettingsPage() {
   async function onSubmit(data: z.infer<typeof profileFormSchema>) {
     setIsSaving(true)
     try {
-      const res = await fetch(`${API_URL}/users/profile`, {
+      const res = await fetch(`${API}/users/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -577,12 +577,13 @@ export default function SettingsPage() {
             <Button variant="destructive" disabled={isDeleting} onClick={async () => {
               setIsDeleting(true)
               try {
-                await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/users/profile`, {
+                await fetch(`${API}/users/profile`, {
                   method: "DELETE", credentials: "include"
                 })
                 toast.success("Cuenta eliminada. Redirigiendo...")
                 setTimeout(() => window.location.href = "/logout", 1500)
-              } catch (_) {
+              } catch (err) {
+                console.error("Error deleting account:", err)
                 toast.error("Error al eliminar cuenta. Intenta de nuevo.")
               } finally {
                 setIsDeleting(false)

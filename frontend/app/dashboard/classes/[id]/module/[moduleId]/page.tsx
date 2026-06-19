@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, ArrowLeft, BookOpen, AlertTriangle } from "lucide-react"
 import { TheoryWithExercises } from "@/components/interactive/theory-with-exercises"
 import { toast } from "sonner"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function ClassModuleContentPage() {
   const params = useParams()
@@ -41,7 +40,8 @@ export default function ClassModuleContentPage() {
         setIsLoading(false)
         return
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error loading module:", err)
       setErrorMsg("Error de conexión")
       setIsLoading(false)
       return
@@ -53,7 +53,9 @@ export default function ClassModuleContentPage() {
       if (classData.success) {
         setClassTitle(classData.class?.title || "")
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error("Error loading class title:", err)
+    }
     setIsLoading(false)
   }
 

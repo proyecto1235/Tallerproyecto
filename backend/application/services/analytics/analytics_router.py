@@ -158,6 +158,9 @@ async def get_class_analytics(
     from infrastructure.adapters.output.postgres.connection import PostgresConnection
 
     with PostgresConnection.get_cursor() as cursor:
+        cursor.execute("SELECT 1 FROM classes WHERE id = %s AND teacher_id = %s", (class_id, token_data.user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="No tienes acceso a esta clase")
         cursor.execute(
             "SELECT student_id FROM class_enrollments WHERE class_id = %s AND status = 'approved'",
             (class_id,),
@@ -255,11 +258,13 @@ async def get_risk_students(
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             SELECT DISTINCT e.student_id FROM enrollments e
-            WHERE e.status IN ('active', 'completed')
+            JOIN modules m ON e.module_id = m.id
+            WHERE e.status IN ('active', 'completed') AND m.teacher_id = %s
             UNION
             SELECT DISTINCT ce.student_id FROM class_enrollments ce
-            WHERE ce.status = 'approved'
-        """)
+            JOIN classes c ON ce.class_id = c.id
+            WHERE ce.status = 'approved' AND c.teacher_id = %s
+        """, (token_data.user_id, token_data.user_id))
         rows = cursor.fetchall()
 
     if not rows:
@@ -352,11 +357,13 @@ async def get_anomalies(
     with PostgresConnection.get_cursor() as cursor:
         cursor.execute("""
             SELECT DISTINCT e.student_id FROM enrollments e
-            WHERE e.status IN ('active', 'completed')
+            JOIN modules m ON e.module_id = m.id
+            WHERE e.status IN ('active', 'completed') AND m.teacher_id = %s
             UNION
             SELECT DISTINCT ce.student_id FROM class_enrollments ce
-            WHERE ce.status = 'approved'
-        """)
+            JOIN classes c ON ce.class_id = c.id
+            WHERE ce.status = 'approved' AND c.teacher_id = %s
+        """, (token_data.user_id, token_data.user_id))
         rows = cursor.fetchall()
 
     if not rows:

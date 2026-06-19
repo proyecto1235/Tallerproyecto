@@ -8,6 +8,7 @@ import { Play, Terminal, CheckCircle2, XCircle, Eye, RotateCcw, Loader2 } from '
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
+import API from "@/lib/api"
 
 export function InlineExercise({ exercise, moduleId, onComplete, classModuleId }: { exercise: any; moduleId?: number; onComplete?: () => void; classModuleId?: number }) {
   const [code, setCode] = useState(exercise.instructions || "# Escribe tu código aquí\n")
@@ -28,7 +29,7 @@ export function InlineExercise({ exercise, moduleId, onComplete, classModuleId }
     setShowSolution(false)
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exercises/submit`, {
+      const res = await fetch(`${API}/exercises/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',

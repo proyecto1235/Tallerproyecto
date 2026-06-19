@@ -67,7 +67,7 @@ class _LazyIntelligentTutor:
     def __getattr__(self, name):
         if self._instance is None:
             from application.services.intelligent_tutor import IntelligentTutor
-            self._instance = IntelligentTutor(orchestrator=ml_orchestrator)
+            self._instance = IntelligentTutor(orchestrator=ml_orchestrator, llm_tutor=ai_tutor_service)
         return getattr(self._instance, name)
 
 # AI / ML services (lazy — ML packages imported only when first used)

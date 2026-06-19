@@ -32,6 +32,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
 import { Search, Loader2, User, BookOpen, Clock, Activity, AlertTriangle, CheckCircle2, XCircle, UserPlus } from "lucide-react"
+import API from "@/lib/api"
 
 export default function StudentsPage() {
   const [activeTab, setActiveTab] = useState("students")
@@ -50,8 +51,8 @@ export default function StudentsPage() {
     const fetchData = async () => {
       try {
         const [studentsRes, pendingRes] = await Promise.all([
-          fetch("http://localhost:8000/api/teacher/students", { credentials: 'include' }),
-          fetch("http://localhost:8000/api/teacher/pending-enrollments", { credentials: 'include' })
+          fetch(`${API}/teacher/students`, { credentials: 'include' }),
+          fetch(`${API}/teacher/pending-enrollments`, { credentials: 'include' })
         ])
         const studentsData = await studentsRes.json()
         const pendingData = await pendingRes.json()
@@ -83,7 +84,7 @@ export default function StudentsPage() {
     setIsModalOpen(true)
     setIsDetailsLoading(true)
     try {
-      const res = await fetch(`http://localhost:8000/api/teacher/students/${studentId}`, { credentials: 'include' })
+      const res = await fetch(`${API}/teacher/students/${studentId}`, { credentials: 'include' })
       const data = await res.json()
       if (data.success) setStudentDetails(data.student)
     } catch (error) {
@@ -95,7 +96,7 @@ export default function StudentsPage() {
 
   const handleApprove = async (req: any) => {
     try {
-      const res = await fetch("http://localhost:8000/api/teacher/enrollments/approve", {
+      const res = await fetch(`${API}/teacher/enrollments/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -115,7 +116,7 @@ export default function StudentsPage() {
 
   const handleReject = async (req: any) => {
     try {
-      const res = await fetch("http://localhost:8000/api/teacher/enrollments/reject", {
+      const res = await fetch(`${API}/teacher/enrollments/reject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -134,7 +135,7 @@ export default function StudentsPage() {
   const handleUnenroll = async (studentId: number, moduleId: number, moduleTitle: string) => {
     if (!confirm(`¿Estás seguro de que deseas desmatricular al estudiante de "${moduleTitle}"?`)) return
     try {
-      const res = await fetch(`http://localhost:8000/api/classes/${moduleId}/unenroll/${studentId}`, {
+      const res = await fetch(`${API}/classes/${moduleId}/unenroll/${studentId}`, {
         method: "POST", credentials: 'include'
       })
       const data = await res.json()

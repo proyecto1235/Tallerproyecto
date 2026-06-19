@@ -22,6 +22,7 @@ import {
   Trophy,
 } from "lucide-react"
 import Link from "next/link"
+import API from "@/lib/api"
 
 interface TeacherDashboardProps {
   user: User
@@ -45,9 +46,9 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
     const fetchData = async () => {
       try {
         const [metricsRes, alertsRes, studentsRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/dashboard`, { credentials: "include" }),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/alerts`, { credentials: "include" }),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/students`, { credentials: "include" }),
+          fetch(`${API}/teacher/dashboard`, { credentials: "include" }),
+          fetch(`${API}/teacher/alerts`, { credentials: "include" }),
+          fetch(`${API}/teacher/students`, { credentials: "include" }),
         ])
         const metricsData = await metricsRes.json()
         const alertsData = await alertsRes.json()

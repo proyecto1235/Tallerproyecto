@@ -11,7 +11,7 @@ import { Loader2, Copy, Check, Trophy, BookOpen, Star, Flame, GraduationCap, Pre
 import { toast } from "sonner"
 import Link from "next/link"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 interface ProfileData {
   full_name: string
@@ -43,26 +43,28 @@ export default function ProfilePage() {
       if (!isNaN(numericId) || identifier.includes("-")) {
         try {
           const endpoint = identifier.includes("-")
-            ? `${API_URL}/users/by-public-id/${identifier}`
-            : `${API_URL}/users/${numericId}`
+            ? `${API}/users/by-public-id/${identifier}`
+            : `${API}/users/${numericId}`
           const res = await fetch(endpoint, { credentials: "include" })
           const data = await res.json()
           if (data.success) {
             const u = data.user
             let achievements: any[] = []
             try {
-              const achRes = await fetch(`${API_URL}/achievements?user_id=${u.id}`, { credentials: "include" })
+              const achRes = await fetch(`${API}/achievements?user_id=${u.id}`, { credentials: "include" })
               const achData = await achRes.json()
               if (achData.success) {
                 achievements = (achData.achievements || [])
                   .filter((a: any) => !a.is_locked)
                   .map((a: any) => ({ id: a.id, name: a.name, icon: a.icon }))
               }
-            } catch (_) {}
+            } catch (err) {
+              console.error("Error fetching user achievements:", err)
+            }
 
             let profileClasses: any[] = []
             try {
-              const clsRes = await fetch(`${API_URL}/users/${u.id}/classes`, { credentials: "include" })
+              const clsRes = await fetch(`${API}/users/${u.id}/classes`, { credentials: "include" })
               const clsData = await clsRes.json()
               if (clsData.success) {
                 profileClasses = (clsData.classes || []).map((c: any) => ({
@@ -73,7 +75,9 @@ export default function ProfilePage() {
                   student_count: c.student_count || 0,
                 }))
               }
-            } catch (_) {}
+            } catch (err) {
+              console.error("Error fetching user classes:", err)
+            }
 
             setProfile({
               full_name: u.full_name,
@@ -89,12 +93,14 @@ export default function ProfilePage() {
             setLoading(false)
             return
           }
-        } catch (_) {}
+        } catch (err) {
+          console.error("Error fetching user profile by ID:", err)
+        }
       }
 
       // Fallback: try searching by name
       try {
-        const res = await fetch(`${API_URL}/users/search?q=${encodeURIComponent(identifier)}`, { credentials: "include" })
+        const res = await fetch(`${API}/users/search?q=${encodeURIComponent(identifier)}`, { credentials: "include" })
         const data = await res.json()
         if (data.success && data.users.length > 0) {
           const found = data.users[0]
@@ -105,7 +111,9 @@ export default function ProfilePage() {
           }
           return
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error("Error searching user by name:", err)
+      }
       setLoading(false)
     }
     fetchProfile()

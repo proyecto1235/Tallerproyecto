@@ -20,6 +20,7 @@ import Link from "next/link"
 import { InteractiveExercise } from "@/components/interactive/InteractiveExercise"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import API from "@/lib/api"
 import {
   BarChart,
   Bar,
@@ -47,10 +48,10 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     const fetchDashboard = async () => {
       try {
         const [dashRes, enrollRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/dashboard/student`, {
+          fetch(`${API}/dashboard/student`, {
             credentials: "include"
           }),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/classes/enrolled`, {
+          fetch(`${API}/classes/enrolled`, {
             credentials: "include"
           }),
         ])

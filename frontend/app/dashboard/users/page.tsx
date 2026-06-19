@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import API from "@/lib/api"
 
 export default function UsersPage() {
   const { user } = useAuth()
@@ -30,8 +31,7 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     setIsLoading(true)
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
-      const res = await fetch(`${API_URL}/admin/users`, { 
+      const res = await fetch(`${API}/admin/users`, { 
         credentials: 'include' 
       })
       if (!res.ok) throw new Error("Backend no responde")
@@ -42,8 +42,7 @@ export default function UsersPage() {
         throw new Error("Estructura de datos inválida")
       }
     } catch (error) {
-      console.info("Usando MOCK_USERS porque el backend no está disponible.")
-      setUsers([{ id: 1, full_name: "Demo User", email: "demo@test.com", role: "student" }])
+      console.error("Error fetching users:", error)
     } finally {
       setIsLoading(false)
     }
@@ -69,8 +68,7 @@ export default function UsersPage() {
   const handleSaveEdit = async () => {
     if (selectedUser) {
       try {
-        const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api").replace(/\/$/, "")
-        const res = await fetch(`${API_URL}/admin/users/${selectedUser.id}/role`, {
+        const res = await fetch(`${API}/admin/users/${selectedUser.id}/role`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: 'include',

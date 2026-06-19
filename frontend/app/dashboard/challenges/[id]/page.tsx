@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Play, Terminal, CheckCircle2, XCircle, Trophy, ArrowLeft, Loader2, Clock, Eye, Zap, Target } from "lucide-react"
 import { toast } from "sonner"
+import API from "@/lib/api"
 
 export default function ChallengeDetailPage() {
   const params = useParams()
@@ -25,7 +26,7 @@ export default function ChallengeDetailPage() {
   useEffect(() => {
     const fetchChallenge = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/challenges/${params.id}`, { credentials: 'include' })
+        const res = await fetch(`${API}/challenges/${params.id}`, { credentials: 'include' })
         const data = await res.json()
         if (data.success) {
           setChallenge(data.challenge)
@@ -50,7 +51,7 @@ export default function ChallengeDetailPage() {
     setOutput("Ejecutando código...")
 
     try {
-      const res = await fetch("http://localhost:8000/api/challenges/submit", {
+      const res = await fetch(`${API}/challenges/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',

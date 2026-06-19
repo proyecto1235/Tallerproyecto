@@ -15,7 +15,7 @@ class AIService(ABC):
         pass
     
     @abstractmethod
-    async def predict_student_performance(self, student_id: int, module_id: int) -> float:
+    async def predict_student_performance(self, student_id: int, module_id: int) -> Optional[float]:
         """Predict student performance using ML"""
         pass
     

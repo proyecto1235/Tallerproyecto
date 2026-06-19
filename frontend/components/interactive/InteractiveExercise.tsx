@@ -6,6 +6,7 @@ import { python } from '@codemirror/lang-python'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { Play, RotateCcw, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import API from "@/lib/api"
 
 export function InteractiveExercise() {
   const [code, setCode] = useState("# Haz que el robot salte 3 veces\nfor i in range(3):\n    jump()\n    print(f'Salto {i + 1}')\n")
@@ -22,7 +23,7 @@ export function InteractiveExercise() {
     setOutput("")
     
     try {
-      const res = await fetch("http://localhost:8000/api/execute-code", {
+      const res = await fetch(`${API}/execute-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',

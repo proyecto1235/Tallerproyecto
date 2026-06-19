@@ -18,6 +18,7 @@ import {
   Legend
 } from "recharts"
 import { Loader2, Users, BookOpen, Target, TrendingUp, Lightbulb, AlertTriangle } from "lucide-react"
+import API from "@/lib/api"
 
 export default function MetricsPage() {
   const [metrics, setMetrics] = useState<any | null>(null)
@@ -27,7 +28,7 @@ export default function MetricsPage() {
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/teacher/dashboard", {
+        const res = await fetch(`${API}/teacher/dashboard`, {
           credentials: 'include'
         })
         const data = await res.json()

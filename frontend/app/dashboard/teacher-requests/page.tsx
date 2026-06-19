@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react"
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+import API from "@/lib/api"
 
 export default function TeacherRequestsPage() {
   const [requests, setRequests] = useState<any[]>([])
@@ -25,10 +24,8 @@ export default function TeacherRequestsPage() {
       const res = await fetch(`${API}/admin/teachers/pending`, { credentials: 'include' })
       const data = await res.json()
       if (data.success) setRequests(data.requests)
-    } catch (_) {
-      // Fallback to localStorage
-      const local = localStorage.getItem("robolearn_teacher_pending")
-      if (local) setRequests(JSON.parse(local))
+    } catch (err) {
+      console.error("Error fetching teacher requests:", err)
     } finally {
       setIsLoading(false)
     }
@@ -44,13 +41,8 @@ export default function TeacherRequestsPage() {
         toast.success(`${name} ahora es profesor activo.`)
         setRequests(prev => prev.filter(r => r.id !== id))
       }
-    } catch (_) {
-      // Fallback: remove from localStorage
-      const local = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
-      const updated = local.filter((r: any) => r.id !== id)
-      localStorage.setItem("robolearn_teacher_pending", JSON.stringify(updated))
-      setRequests(prev => prev.filter(r => r.id !== id))
-      toast.success(`${name} ahora es profesor activo.`)
+    } catch (err) {
+      console.error("Error approving teacher request:", err)
     }
   }
 
@@ -64,12 +56,8 @@ export default function TeacherRequestsPage() {
         toast.info(`Solicitud de ${name} rechazada.`)
         setRequests(prev => prev.filter(r => r.id !== id))
       }
-    } catch (_) {
-      const local = JSON.parse(localStorage.getItem("robolearn_teacher_pending") || "[]")
-      const updated = local.filter((r: any) => r.id !== id)
-      localStorage.setItem("robolearn_teacher_pending", JSON.stringify(updated))
-      setRequests(prev => prev.filter(r => r.id !== id))
-      toast.info(`Solicitud de ${name} rechazada.`)
+    } catch (err) {
+      console.error("Error rejecting teacher request:", err)
     }
   }
 

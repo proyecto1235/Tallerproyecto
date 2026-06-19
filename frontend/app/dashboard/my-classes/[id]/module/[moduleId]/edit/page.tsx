@@ -24,9 +24,8 @@ import {
 } from "@/components/ui/select"
 import { InlineExercise } from "@/components/interactive/InlineExercise"
 import { TheoryWithExercises } from "@/components/interactive/theory-with-exercises"
+import API from "@/lib/api"
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
-const STORAGE_KEY = "robolearn_teacher_classes"
 
 interface ClassExercise {
   id: number | string
@@ -86,21 +85,9 @@ export default function ModuleEditPage() {
         setLoading(false)
         return
       }
-    } catch (_) {}
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const all = JSON.parse(saved)
-      const cls = all.find((c: any) => String(c.id) === classId)
-      if (cls) {
-        const found = (cls.modules || []).find((m: any) => String(m.id) === moduleId)
-        if (found) {
-          setMod(found)
-          setTitle(found.title)
-          setDescription(found.description || "")
-          setContent(found.theory_content || `# ${found.title}\n\nEscribe aquí el contenido...`)
-          setExercises(found.exercises || [])
-        }
-      }
+      toast.error(data.detail || data.error || "Error al cargar el módulo")
+    } catch (err) {
+      console.error("Error loading module:", err)
     }
     setLoading(false)
   }
@@ -120,7 +107,8 @@ export default function ModuleEditPage() {
       } else {
         toast.error(data.error || "Error al guardar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al guardar módulo:", err)
       toast.error("Error de conexión")
     }
     setSaving(false)
@@ -185,14 +173,18 @@ export default function ModuleEditPage() {
       if (data.success) {
         toast.success(isNew ? "Ejercicio creado" : "Ejercicio actualizado")
         setShowAddExercise(false)
+        if (isNew) {
+          const newId = data.exercise_id
+          setExercises(prev => [...prev, { ...editingExercise!, id: newId }])
+        } else {
+          setExercises(prev => prev.map(e => e.id === editingExercise!.id ? { ...editingExercise! } : e))
+        }
         setEditingExercise(null)
-        const modRes = await fetch(`${API}/classes/${classId}/modules/${moduleId}`, { credentials: "include" })
-        const modData = await modRes.json()
-        if (modData.success) setExercises(modData.module.exercises || [])
       } else {
         toast.error(data.error || "Error al guardar ejercicio")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al guardar ejercicio:", err)
       toast.error("Error de conexión")
     }
   }
@@ -210,7 +202,8 @@ export default function ModuleEditPage() {
       } else {
         toast.error(data.error || "Error al eliminar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al eliminar ejercicio:", err)
       toast.error("Error de conexión")
     }
   }

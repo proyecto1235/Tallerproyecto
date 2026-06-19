@@ -16,8 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
-
-const STORAGE_KEY = "robolearn_teacher_classes"
+import API from "@/lib/api"
 
 interface TeacherClass {
   id: string
@@ -50,30 +49,7 @@ interface ClassExercise {
   points: number
 }
 
-const DEMO_CLASSES: TeacherClass[] = [
-  {
-    id: "tc-1", title: "Desarrollo Web con Python", description: "Aprende a crear aplicaciones web usando Django y Flask. Desde HTML básico hasta APIs REST.",
-    category: "Desarrollo Web", difficulty: "Intermedio", is_published: true,
-    modules: [
-      { id: "tcm-1", title: "Introducción a HTML", description: "Estructura básica de páginas web", theory_content: "# HTML Básico", order: 1, exercises: [] },
-      { id: "tcm-2", title: "Flask: Tu Primer Servidor", description: "Crea un servidor web con Flask", theory_content: "# Flask", order: 2, exercises: [] }
-    ],
-    student_count: 12, created_at: "2024-01-15"
-  },
-  {
-    id: "tc-2", title: "Robótica Educativa", description: "Construye y programa robots con Python y Arduino.",
-    category: "Robótica", difficulty: "Avanzado", is_published: false,
-    modules: [
-      { id: "tcm-3", title: "Motores y Actuadores", description: "Controla motores DC y servos", theory_content: "# Motores", order: 1, exercises: [] }
-    ],
-    student_count: 8, created_at: "2024-02-20"
-  },
-  {
-    id: "tc-3", title: "Introducción a la IA", description: "Conceptos básicos de inteligencia artificial con Python.",
-    category: "Inteligencia Artificial", difficulty: "Avanzado", is_published: true,
-    modules: [], student_count: 5, created_at: "2024-03-10"
-  },
-]
+
 
 function generateId() {
   return Math.random().toString(36).substring(2, 10)
@@ -87,24 +63,20 @@ export default function MyClassesPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [editingClass, setEditingClass] = useState<Partial<TeacherClass> | null>(null)
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+
 
   const loadClasses = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/classes/my-classes`, { credentials: 'include' })
+      const res = await fetch(`${API}/classes/my-classes`, { credentials: 'include' })
       const data = await res.json()
       if (data.success && data.classes) {
         setClasses(data.classes.map((c: any) => ({ ...c, modules: [], id: String(c.id) })))
         setLoading(false)
         return
       }
-    } catch (_) {}
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      setClasses(JSON.parse(saved))
-    } else {
-      setClasses(DEMO_CLASSES)
+    } catch (err) {
+      console.error("Error loading classes:", err)
     }
     setLoading(false)
   }
@@ -126,7 +98,7 @@ export default function MyClassesPage() {
     setLoading(true)
     try {
       if (editingClass.id) {
-        const res = await fetch(`${API_URL}/classes/${editingClass.id}`, {
+        const res = await fetch(`${API}/classes/${editingClass.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -146,7 +118,7 @@ export default function MyClassesPage() {
           toast.error(data.error || "Error al actualizar")
         }
       } else {
-        const res = await fetch(`${API_URL}/classes`, {
+        const res = await fetch(`${API}/classes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -166,7 +138,8 @@ export default function MyClassesPage() {
           toast.error(data.error || "Error al crear")
         }
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al guardar clase:", err)
       toast.error("Error de conexión")
     }
     setLoading(false)
@@ -177,7 +150,7 @@ export default function MyClassesPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar esta clase?")) return
     try {
-      const res = await fetch(`${API_URL}/classes/${id}`, {
+      const res = await fetch(`${API}/classes/${id}`, {
         method: "DELETE", credentials: "include"
       })
       const data = await res.json()
@@ -187,7 +160,8 @@ export default function MyClassesPage() {
       } else {
         toast.error(data.error || "Error al eliminar")
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al eliminar clase:", err)
       toast.error("Error de conexión")
     }
   }
@@ -196,7 +170,7 @@ export default function MyClassesPage() {
     const cls = classes.find(c => c.id === id)
     if (!cls) return
     try {
-      const res = await fetch(`${API_URL}/classes/${id}`, {
+      const res = await fetch(`${API}/classes/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -207,7 +181,8 @@ export default function MyClassesPage() {
         toast.success(cls.is_published ? "Clase despublicada" : "Clase publicada")
         loadClasses()
       }
-    } catch (_) {
+    } catch (err) {
+      console.error("Error al cambiar publicación:", err)
       toast.error("Error de conexión")
     }
   }

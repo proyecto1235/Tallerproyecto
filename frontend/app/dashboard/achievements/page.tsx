@@ -5,6 +5,7 @@ import { AchievementBadge, AchievementBadgeProps } from "@/components/dashboard/
 import { Trophy, Star, Shield, Flame, TrendingUp, Medal, Loader2 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
+import API from "@/lib/api"
 
 const iconMap: Record<string, "trophy" | "star" | "shield" | "medal" | "zap" | "award" | "target" | "flame"> = {
   trophy: "trophy", star: "star", shield: "shield", medal: "medal",
@@ -21,7 +22,7 @@ export default function AchievementsPage() {
   useEffect(() => {
     const fetchAchievements = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/achievements", { credentials: 'include' })
+        const res = await fetch(`${API}/achievements`, { credentials: 'include' })
         const data = await res.json()
         if (data.success) {
           const mapped: AchievementBadgeProps[] = data.achievements.map((a: any) => ({
@@ -35,21 +36,23 @@ export default function AchievementsPage() {
           }))
           setAchievements(mapped)
         }
-      } catch (_) {
-        // Fallback
+      } catch (err) {
+        console.error("Error fetching achievements:", err)
       }
       setLoading(false)
     }
     
     const fetchUser = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/users/profile", { credentials: 'include' })
+        const res = await fetch(`${API}/users/profile`, { credentials: 'include' })
         const data = await res.json()
         if (data.success) {
           setUserPoints(data.user.points || 0)
           setStreakDays(data.user.streak_days || 0)
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error("Error fetching user profile:", err)
+      }
     }
     
     fetchAchievements()

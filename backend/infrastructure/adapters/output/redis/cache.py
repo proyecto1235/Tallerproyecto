@@ -1,16 +1,27 @@
 import json
 import hashlib
+import logging
 from typing import Optional, Any
 import redis.asyncio as aioredis
 
+logger = logging.getLogger(__name__)
+
 class AICache:
-    def __init__(self, redis_url: str = "redis://redis:6379/0"):
+    def __init__(self, redis_url: str):
         self.redis_url = redis_url
         self._redis: Optional[aioredis.Redis] = None
         self._available: Optional[bool] = None
+        self._warned: bool = False
 
     async def _get_redis(self) -> Optional[aioredis.Redis]:
         if self._available is False:
+            if not self._warned:
+                logger.warning(
+                    "[AICache] Redis no disponible. El caché de respuestas de IA y embeddings "
+                    "está desactivado. Las respuestas del tutor se generarán sin caché "
+                    "(mayor latencia). Revisa REDIS_URL en .env."
+                )
+                self._warned = True
             return None
         if self._redis is None:
             try:
@@ -21,7 +32,7 @@ class AICache:
                 await self._redis.ping()
                 self._available = True
             except Exception as e:
-                print(f"[AICache] Redis unavailable: {e}")
+                logger.warning(f"[AICache] Redis no disponible: {e}")
                 self._available = False
                 self._redis = None
                 return None

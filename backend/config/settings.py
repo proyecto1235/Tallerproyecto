@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from typing import Optional
 from pathlib import Path
 
@@ -23,39 +23,37 @@ class Settings(BaseSettings):
     jwt_private_key: Optional[str] = None
     node_env: Optional[str] = "development"
 
-    postgres_user: str = "postgres"
-    postgres_password: str = "123123123"
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_db: str = "robolearn"
+    # REQUIRED via .env — no defaults for security
+    postgres_user: str = ""
+    postgres_password: str = ""
+    postgres_host: str = ""
+    postgres_port: int = 0
+    postgres_db: str = ""
     db_pool_min: int = 5
     db_pool_max: int = 50
 
-    mongodb_url: str = "mongodb://localhost:27017"
-    mongodb_db: str = "robolearn_metrics"
+    # MongoDB — REQUIRED via .env
+    mongodb_url: str = ""
+    mongodb_db: str = ""
 
-    # Dialogflow
-    dialogflow_project_id: Optional[str] = "roboloarnchatbot-vpif"
-    # dialogflow_agent_id: Optional[str] = 
-    google_credentials_path: Optional[str] = "./robolearn-key.json"
+    # Dialogflow — optional, set via .env if using Dialogflow
+    dialogflow_project_id: Optional[str] = ""
+    google_credentials_path: Optional[str] = ""
 
-    # AI / OpenAI
-    # openai_api_key: Optional[str] = None
-    # openai_model: str = "gpt-4o-mini"
+    # Redis — REQUIRED via .env
+    redis_url: str = ""
 
-    # Redis
-    redis_url: str = "redis://redis:6379/0"
+    # Ollama / Local LLM — set via .env
+    ollama_url: str = ""
+    ollama_model: str = ""
 
-    # Ollama / Local LLM
-    ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:3b"
-
-    openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-3.5-turbo"
+    # OpenAI — optional, set via .env if using OpenAI as additional fallback
+    openai_api_key: Optional[str] = ""
+    openai_model: str = ""
 
     ml_model_dir: str = "models"
 
-    cors_origins: list = ["*"]
+    cors_origins: list = []
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -63,5 +61,29 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return v
+
+    @model_validator(mode="after")
+    def validate_required(self):
+        required = {
+            "postgres_user": "POSTGRES_USER",
+            "postgres_password": "POSTGRES_PASSWORD",
+            "postgres_host": "POSTGRES_HOST",
+            "postgres_port": "POSTGRES_PORT",
+            "postgres_db": "POSTGRES_DB",
+            "mongodb_url": "MONGODB_URL",
+            "mongodb_db": "MONGODB_DB",
+            "redis_url": "REDIS_URL",
+        }
+        missing = []
+        for attr, env_var in required.items():
+            val = getattr(self, attr, None)
+            if not val or (isinstance(val, int) and val == 0):
+                missing.append(env_var)
+        if missing:
+            raise ValueError(
+                f"Variables .env obligatorias faltantes: {', '.join(missing)}. "
+                f"Revisa backend/.env o config/settings.py"
+            )
+        return self
 
 settings = Settings()

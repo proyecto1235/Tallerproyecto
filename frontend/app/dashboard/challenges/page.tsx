@@ -6,6 +6,7 @@ import { ChallengeCard, ChallengeCardProps } from "@/components/dashboard/challe
 import { Target, Zap, Flame, Trophy, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
+import API from "@/lib/api"
 
 export default function ChallengesPage() {
   const { user } = useAuth()
@@ -16,7 +17,7 @@ export default function ChallengesPage() {
   useEffect(() => {
     const fetchChallenges = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/challenges", { credentials: 'include' })
+        const res = await fetch(`${API}/challenges`, { credentials: 'include' })
         const data = await res.json()
         if (data.success && data.challenges && data.challenges.length > 0) {
           const mapped = data.challenges.map((c: any) => ({
@@ -40,12 +41,14 @@ export default function ChallengesPage() {
 
     const fetchProfile = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/users/profile", { credentials: 'include' })
+        const res = await fetch(`${API}/users/profile`, { credentials: 'include' })
         const data = await res.json()
         if (data.success) {
           setUserStars(data.user.points || 0)
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error("Error fetching user profile:", err)
+      }
     }
 
     fetchChallenges()

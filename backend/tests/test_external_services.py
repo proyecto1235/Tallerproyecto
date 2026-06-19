@@ -617,7 +617,7 @@ class TestAIServiceImpl:
     def test_chat_with_dialogflow_not_configured(self):
         svc = self.make()
         result = _await(svc.chat_with_dialogflow("sess", "hello"))
-        assert result == "Dialogflow not configured. Please set DIALOGFLOW_PROJECT_ID."
+        assert result == "Dialogflow not configured."
 
     # -- predict_student_performance ----------------------------------------
 
@@ -637,7 +637,7 @@ class TestAIServiceImpl:
             instance.predict_student.return_value = {}
             MockOrch.return_value = instance
             result = _await(svc.predict_student_performance(1, 2))
-        assert result == 0.5
+        assert result is None
 
     def test_predict_student_performance_fallback_sql(self, mock_cursor):
         mock_cursor.fetchone.return_value = [0.75]
@@ -657,7 +657,7 @@ class TestAIServiceImpl:
             with patch('infrastructure.adapters.output.postgres.connection.PostgresConnection.get_cursor') as mg:
                 mg.return_value.__enter__.return_value = mock_cursor
                 result = _await(svc.predict_student_performance(1, 2))
-        assert result == 0.5
+        assert result is None
 
     def test_predict_student_performance_all_fail(self):
         svc = self.make()
@@ -666,7 +666,7 @@ class TestAIServiceImpl:
             with patch('infrastructure.adapters.output.postgres.connection.PostgresConnection.get_cursor',
                        side_effect=Exception("no db")):
                 result = _await(svc.predict_student_performance(1, 2))
-        assert result == 0.5
+        assert result is None
 
     # -- detect_learning_path -----------------------------------------------
 
@@ -692,7 +692,7 @@ class TestAIServiceImpl:
         with patch('infrastructure.adapters.output.postgres.connection.PostgresConnection.get_cursor') as mg:
             mg.return_value.__enter__.return_value = mock_cursor
             result = _await(svc.detect_learning_path(1))
-        assert result["recommended_path"] == "standard"
+        assert result["recommended_path"] == "unknown"
         assert result["modules"] == []
 
     def test_detect_learning_path_exception_returns_fallback(self):
@@ -700,28 +700,8 @@ class TestAIServiceImpl:
         with patch('infrastructure.adapters.output.postgres.connection.PostgresConnection.get_cursor',
                    side_effect=Exception("db crash")):
             result = _await(svc.detect_learning_path(1))
-        assert result["recommended_path"] == "standard"
+        assert result["recommended_path"] == "unknown"
         assert result["modules"] == []
-
-    # -- is_fallback_response -----------------------------------------------
-
-    @pytest.mark.parametrize("text,expected", [
-        (None, True),
-        ("", True),
-        ("  ", False),
-        ("Lo siento, no entendí", True),
-        ("no puedo ayudarte con eso", True),
-        ("No estoy seguro de la respuesta", True),
-        ("consulta a tu profesor para más ayuda", True),
-        ("Esa pregunta no está en mi base", True),
-        ("No sé decirte eso", True),
-        ("Hola, ¿cómo estás?", False),
-        ("La respuesta es 42", False),
-        ("Aquí tienes un ejemplo", False),
-    ])
-    def test_is_fallback_response(self, text, expected):
-        from application.services.ai_service_impl import AIServiceImpl
-        assert AIServiceImpl.is_fallback_response(text) is expected
 
     # -- _extract_features --------------------------------------------------
 
