@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import CodeMirror from "@uiw/react-codemirror"
+import { CodeEditor } from "@/components/code-editor"
 import { python } from "@codemirror/lang-python"
 import { oneDark } from "@codemirror/theme-one-dark"
 import { Button } from "@/components/ui/button"
@@ -272,7 +272,7 @@ export default function ExercisesPage() {
             </div>
           ) : (
             <div className="flex-1 border rounded-xl overflow-hidden bg-[#282c34] shadow-inner relative">
-              <CodeMirror
+              <CodeEditor
                 value={code}
                 height="100%"
                 theme={oneDark}

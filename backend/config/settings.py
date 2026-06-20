@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     secret_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 10080
+    jwt_public_key: Optional[str] = None
+    jwt_private_key: Optional[str] = None
+    node_env: Optional[str] = "development"
 
     postgres_user: str = "postgres"
     postgres_password: str = "123123123"

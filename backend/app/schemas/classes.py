@@ -3,16 +3,19 @@ from typing import Optional
 
 
 class ClassCreate(BaseModel):
-    name: str
+    title: str
     description: Optional[str] = None
-    invite_code: Optional[str] = None
+    category: Optional[str] = None
+    difficulty: Optional[str] = None
+    is_published: bool = False
 
 
 class ClassUpdate(BaseModel):
-    name: Optional[str] = None
+    title: Optional[str] = None
     description: Optional[str] = None
-    invite_code: Optional[str] = None
-    is_active: Optional[bool] = None
+    category: Optional[str] = None
+    difficulty: Optional[str] = None
+    is_published: Optional[bool] = None
 
 
 class ClassStudentAdd(BaseModel):

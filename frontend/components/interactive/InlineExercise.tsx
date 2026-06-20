@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from 'react'
-import CodeMirror from '@uiw/react-codemirror'
+import { CodeEditor } from '@/components/code-editor'
 import { python } from '@codemirror/lang-python'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { Play, Terminal, CheckCircle2, XCircle, Eye, RotateCcw, Loader2 } from 'lucide-react'
@@ -129,7 +129,7 @@ export function InlineExercise({ exercise, moduleId, onComplete, classModuleId }
 
       <div className="grid lg:grid-cols-2">
         <div className="border-r border-border">
-          <CodeMirror
+          <CodeEditor
             value={code}
             height="100%"
             minHeight="200px"

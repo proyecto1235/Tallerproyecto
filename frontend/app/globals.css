@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Inter:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -287,30 +286,6 @@ body {
   );
 }
 
-.dark .crt-scanlines-green {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 3px,
-    rgba(0, 255, 65, 0.04) 3px,
-    rgba(0, 255, 65, 0.04) 5px
-  ),
-  repeating-linear-gradient(
-    90deg,
-    transparent,
-    transparent 3px,
-    rgba(0, 255, 65, 0.02) 3px,
-    rgba(0, 255, 65, 0.02) 5px
-  );
-}
-
 .dark .crt-vignette {
   position: fixed;
   top: 0;
@@ -341,48 +316,13 @@ body {
   55% { opacity: 1; }
 }
 
-/* Pipboy-style horizontal accent lines - visible in dark mode */
-.dark .pipboy-line {
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--primary) 10%,
-    var(--primary) 90%,
-    transparent 100%
-  );
-  opacity: 0.4;
-  margin: 1.5rem 0;
-  border: none;
-}
-
-/* Horizontal separator lines for Pipboy feel */
-.dark hr.pipboy-hr {
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(0, 255, 65, 0.3) 15%,
-    rgba(0, 255, 65, 0.5) 50%,
-    rgba(0, 255, 65, 0.3) 85%,
-    transparent 100%
-  );
-  border: none;
-  margin: 2rem 0;
-  opacity: 0.6;
-}
-
-/* Border glow effect (Pipboy terminal glow) */
-.dark .pipboy-glow {
-  box-shadow:
-    0 0 10px rgba(0, 255, 65, 0.05),
-    0 0 20px rgba(0, 255, 65, 0.03),
-    inset 0 0 10px rgba(0, 255, 65, 0.02);
-}
-
 /* Neo-brutalism shadow */
 .neo-shadow {
   box-shadow: 4px 4px 0px var(--border);
+}
+
+.neo-shadow-primary {
+  box-shadow: 4px 4px 0px var(--primary);
 }
 
 /* ============================================

@@ -1,10 +1,12 @@
 "use client"
 
 import { useAuth } from "@/hooks/use-auth"
-import { StudentDashboard } from "@/components/dashboard/student-dashboard"
 import { TeacherDashboard } from "@/components/dashboard/teacher-dashboard"
 import { AdminDashboard } from "@/components/dashboard/admin-dashboard"
 import { Loader2 } from "lucide-react"
+import dynamic from "next/dynamic"
+
+const StudentDashboard = dynamic(() => import("@/components/dashboard/student-dashboard").then(m => ({ default: m.StudentDashboard })), { ssr: false })
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()

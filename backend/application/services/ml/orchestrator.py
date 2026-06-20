@@ -1,22 +1,16 @@
-import numpy as np
 from typing import Dict, List, Any, Optional
-
-from .feature_extractor import FeatureExtractor
-from .synthetic_dataset import (
-    generate_dataset, extract_for_student,
-    extract_features_for_clustering,
-)
-from .engagement_predictor import EngagementPredictor
-from .performance_predictor import PerformancePredictor
-from .dropout_predictor import DropoutPredictor
-from .frustration_predictor import FrustrationPredictor
-from .clustering import LearningClustering
-from .anomaly_detector import AnomalyDetector
-from .recommender import Recommender
 
 
 class MLOrchestrator:
     def __init__(self):
+        from .engagement_predictor import EngagementPredictor
+        from .performance_predictor import PerformancePredictor
+        from .dropout_predictor import DropoutPredictor
+        from .frustration_predictor import FrustrationPredictor
+        from .clustering import LearningClustering
+        from .anomaly_detector import AnomalyDetector
+        from .recommender import Recommender
+        from .feature_extractor import FeatureExtractor
         self.engagement = EngagementPredictor()
         self.performance = PerformancePredictor()
         self.dropout = DropoutPredictor()
@@ -62,6 +56,7 @@ class MLOrchestrator:
         }
 
     def _get_synthetic_features(self, student_id: int) -> Optional[Dict[str, Any]]:
+        from .synthetic_dataset import generate_dataset, extract_for_student
         if self._synthetic_df is None:
             self._synthetic_df = generate_dataset()
             print(f"[MLOrchestrator] Fallback synthetic dataset: {len(self._synthetic_df)} rows, "
@@ -175,6 +170,7 @@ class MLOrchestrator:
         return result
 
     def predict_batch(self, student_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+        import numpy as np
         if len(student_ids) == 0:
             return {}
 
@@ -329,6 +325,7 @@ class MLOrchestrator:
     def predict_class(
         self, profiles: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
+        import numpy as np
         students = []
         for p in profiles:
             sid = p.get("user_id", p.get("student_id"))
@@ -388,6 +385,7 @@ class MLOrchestrator:
         }
 
     def get_clustering_pca(self) -> Dict:
+        import numpy as np
         if self._synthetic_df is None:
             self._synthetic_df = generate_dataset()
         X = np.array([

@@ -248,8 +248,8 @@ export default function ProfilePage() {
                   <span className="font-medium">{cls.title}</span>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  {cls.module_count > 0 && <span>{cls.module_count} módulos</span>}
-                  {cls.student_count > 0 && <span>{cls.student_count} estudiantes</span>}
+                  {(cls.module_count ?? 0) > 0 && <span>{cls.module_count ?? 0} módulos</span>}
+                  {(cls.student_count ?? 0) > 0 && <span>{cls.student_count ?? 0} estudiantes</span>}
                 </div>
               </div>
             ))}

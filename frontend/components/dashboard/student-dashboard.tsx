@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import type { User } from "@/hooks/use-auth"
+import type { User as AuthUser } from "@/hooks/use-auth"
 import {
   BookOpen,
   Trophy,
@@ -14,7 +14,7 @@ import {
   CheckCircle,
   Clock,
   Zap,
-  User,
+  User as UserIcon,
 } from "lucide-react"
 import Link from "next/link"
 import { InteractiveExercise } from "@/components/interactive/InteractiveExercise"
@@ -34,7 +34,7 @@ import {
 } from "recharts"
 
 interface StudentDashboardProps {
-  user: User
+  user: AuthUser
 }
 
 export function StudentDashboard({ user }: StudentDashboardProps) {
@@ -143,7 +143,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               <span className="font-semibold text-orange-600">{dbStreak} dias</span>
             </div>
             <Button variant="outline" size="sm" className="hidden sm:flex" onClick={() => router.push(`/dashboard/profile/${user.publicId || user.id}`)}>
-              <User className="h-4 w-4 mr-1" /> Ver Perfil
+              <UserIcon className="h-4 w-4 mr-1" /> Ver Perfil
             </Button>
           </div>
       </div>

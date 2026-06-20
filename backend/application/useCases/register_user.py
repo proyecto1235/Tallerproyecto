@@ -1,10 +1,6 @@
 from domain.entities.user import User, UserRole, TeacherRequestStatus
 from domain.ports.user_repository import UserRepository
-<<<<<<< HEAD
-from infrastructure.adapters.output.password_hasher import hash_password
-=======
 import bcrypt
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
 class RegisterUserUseCase:
     """Use case for user registration"""
@@ -33,11 +29,7 @@ class RegisterUserUseCase:
             return {"success": False, "error": "El email ya está registrado"}
         
         # Hash password
-<<<<<<< HEAD
-        password_hash = hash_password(password)
-=======
         password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
         
         # Create user entity
         if request_teacher:

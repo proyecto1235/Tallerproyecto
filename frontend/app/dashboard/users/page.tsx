@@ -43,7 +43,7 @@ export default function UsersPage() {
       }
     } catch (error) {
       console.info("Usando MOCK_USERS porque el backend no está disponible.")
-      setUsers(MOCK_USERS)
+      setUsers([{ id: 1, full_name: "Demo User", email: "demo@test.com", role: "student" }])
     } finally {
       setIsLoading(false)
     }

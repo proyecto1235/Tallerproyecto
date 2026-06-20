@@ -2,42 +2,30 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { jwtVerify } from "jose"
 
-<<<<<<< HEAD
-const secret = process.env.JWT_SECRET
-if (!secret) {
-  throw new Error("JWT_SECRET environment variable is required")
-}
-const JWT_SECRET = new TextEncoder().encode(secret)
-=======
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET
-)
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || process.env.SECRET_KEY || "")
 
 const publicPaths = ["/", "/login", "/register"]
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (publicPaths.some(path => pathname === path)) {
     if (pathname === "/login" || pathname === "/register") {
       const token = request.cookies.get("auth-token")?.value
-      if (token) {
+      if (token && JWT_SECRET) {
         try {
           await jwtVerify(token, JWT_SECRET)
           return NextResponse.redirect(new URL("/dashboard", request.url))
-        } catch {
-        }
+        } catch {}
       }
     }
     return NextResponse.next()
   }
 
-  const token = request.cookies.get("auth-token")?.value
+  if (!JWT_SECRET) return NextResponse.redirect(new URL("/login", request.url))
 
-  if (!token) {
-    return NextResponse.redirect(new URL("/login", request.url))
-  }
+  const token = request.cookies.get("auth-token")?.value
+  if (!token) return NextResponse.redirect(new URL("/login", request.url))
 
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET)

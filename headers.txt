@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+date: Fri, 19 Jun 2026 03:08:36 GMT
+server: uvicorn
+content-length: 159
+content-type: application/json
+set-cookie: auth-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJlbWFpbCI6ImFkbWluQHJvYm9sZWFybi5jb20iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3ODI0NDMzMTYsImlhdCI6MTc4MTgzODUxNiwianRpIjoiNTcwNzRhYWUtZGY3Ni00ZWExLWFiOTEtMzI1ZDcyMmM5ODhmIn0.Dxx9KeNJuT1r9uhjpN3JQPzQ-M9_UX11boqRtVcNm7w; HttpOnly; Max-Age=604800; Path=/; SameSite=lax
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'
+

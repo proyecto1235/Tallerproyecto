@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, ArrowLeft, Save, Eye, Edit3, Plus, Trash, Code, BookOpen } from "lucide-react"
-import CodeMirror from '@uiw/react-codemirror'
+import { CodeEditor } from '@/components/code-editor'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { python } from '@codemirror/lang-python'
@@ -337,7 +337,7 @@ export default function AdminModuleEditPage() {
                 </TabsList>
                 <TabsContent value="editor">
                   <div className="border border-border rounded-md overflow-hidden">
-                    <CodeMirror
+                    <CodeEditor
                       value={theoryContent}
                       height="600px"
                       theme={oneDark}
@@ -440,7 +440,7 @@ export default function AdminModuleEditPage() {
             <div className="space-y-2">
               <Label>Contenido (Markdown)</Label>
               <div className="border rounded-md overflow-hidden">
-                <CodeMirror
+                <CodeEditor
                   value={editingLesson?.theory || ""}
                   height="250px"
                   theme={oneDark}
@@ -474,7 +474,7 @@ export default function AdminModuleEditPage() {
             <div className="space-y-2">
               <Label>Código inicial</Label>
               <div className="border rounded-md overflow-hidden">
-                <CodeMirror
+                <CodeEditor
                   value={editingExercise?.instructions || ""}
                   height="180px"
                   theme={oneDark}

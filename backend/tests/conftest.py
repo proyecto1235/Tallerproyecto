@@ -1,21 +1,31 @@
-<<<<<<< HEAD
-import pytest
-import os
+import asyncio
 import sys
+import os
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+import pytest_asyncio
 import pandas as pd
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-1234567890"
+os.environ["NODE_ENV"] = "test"
 os.environ["POSTGRES_PASSWORD"] = "test"
 os.environ["MONGODB_URL"] = "mongodb://localhost:27017"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["OLLAMA_URL"] = "http://localhost:11434"
 os.environ["DEBUG"] = "False"
 
+from app.main import app
+from infrastructure.adapters.output.postgres.connection import PostgresConnection
+from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
+
+# ── ML fixtures ──
 from application.services.ml.synthetic_dataset import (
-    generate_dataset, build_training_data, FEATURE_NAMES,
+    generate_dataset, build_training_data,
     extract_features_for_engagement, extract_features_for_performance,
     extract_features_for_dropout, extract_features_for_frustration,
     extract_features_for_clustering, extract_features_for_anomaly,
@@ -95,27 +105,9 @@ def sample_student_week():
         "forum_interactions": 4,
         "content_views": 10,
     }
-=======
-import asyncio
-import sys
-import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only-1234567890")
-os.environ.setdefault("NODE_ENV", "test")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-
-from app.main import app
-from infrastructure.adapters.output.postgres.connection import PostgresConnection
-from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
-
+# ── Integration test fixtures ──
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -124,7 +116,7 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture
 async def mock_external_services():
     mock_cursor = MagicMock()
     mock_cursor.__enter__.return_value = mock_cursor
@@ -147,6 +139,7 @@ async def mock_external_services():
 
 @pytest_asyncio.fixture
 async def client():
+    from httpx import ASGITransport, AsyncClient
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -155,4 +148,3 @@ async def client():
 @pytest_asyncio.fixture
 def auth_headers():
     return {"Cookie": "auth-token=mock_token"}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c

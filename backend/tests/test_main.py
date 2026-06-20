@@ -205,19 +205,6 @@ main_module.behavioral_repo.get_student_behavioral_profile = AsyncMock(
 main_module.behavioral_repo.log_exercise_action = AsyncMock(return_value=None)
 main_module.behavioral_repo.get_db = AsyncMock(return_value=MagicMock())
 
-main_module.difficulty_adapter = MagicMock()
-main_module.difficulty_adapter.adapt_difficulty = AsyncMock(
-    return_value={
-        "suggested_difficulty": "Intermedio",
-        "reason": "Good progress",
-    }
-)
-
-main_module.error_pattern_analyzer = MagicMock()
-main_module.error_pattern_analyzer.analyze = AsyncMock(
-    return_value={"patterns": [], "summary": {"total": 0}}
-)
-
 main_module.sandbox_service = MagicMock()
 main_module.sandbox_service.execute_and_compare = AsyncMock(
     return_value={
@@ -231,9 +218,6 @@ main_module.sandbox_service.execute_and_compare = AsyncMock(
 main_module.metrics_service = MagicMock()
 main_module.metrics_service.track_event = AsyncMock(return_value=None)
 
-main_module.alerts_service = MagicMock()
-main_module.alerts_service.generate_alerts = AsyncMock(return_value=[])
-
 main_module.exercise_generator_service = MagicMock()
 
 main_module.ai_tutor_service = MagicMock()
@@ -244,10 +228,6 @@ main_module.ai_tutor_service.llm = MagicMock()
 main_module.ai_tutor_service.llm.chat = AsyncMock(
     return_value="Mock LLM explanation"
 )
-
-main_module.analytics_scheduler = MagicMock()
-main_module.analytics_scheduler.start = MagicMock()
-main_module.analytics_scheduler.stop = MagicMock()
 
 # ── TestClient ──
 client = TestClient(app)
@@ -408,7 +388,7 @@ class TestAuth:
         )
         main_module.user_repository.get_by_email = AsyncMock(return_value=user)
 
-        with patch("app.main.verify_password_async", return_value=True):
+        with patch("app.main.pwd_context.verify", return_value=True):
             resp = client.post(
                 "/api/auth/login",
                 json={"email": "login@test.com", "password": "correct"},
@@ -426,7 +406,7 @@ class TestAuth:
         )
         main_module.user_repository.get_by_email = AsyncMock(return_value=user)
 
-        with patch("app.main.verify_password_async", return_value=False):
+        with patch("app.main.pwd_context.verify", return_value=False):
             resp = client.post(
                 "/api/auth/login",
                 json={"email": "fail@test.com", "password": "wrong"},
@@ -550,12 +530,21 @@ class TestModules:
         user = make_user()
         main_module.user_repository.get_by_id = AsyncMock(return_value=user)
 
-        now = datetime.now()
-        db_cursor.fetchall.return_value = [
-            (1, "My Module", "desc", None, 1, "approved", 1, True, False, "beginner",
-             5, now, "active", now)
-        ]
-        db_cursor.execute.return_value = None
+        now = datetime.now(timezone.utc)
+        mock_enrollment = MagicMock()
+        mock_enrollment.module_id = 1
+        mock_enrollment.status = "active"
+        mock_enrollment.enrolled_at = now
+        main_module.enrollment_repository.get_by_student = AsyncMock(return_value=[mock_enrollment])
+
+        mock_module = MagicMock()
+        mock_module.to_dict.return_value = {
+            "id": 1, "title": "My Module", "description": "desc",
+            "theory_content": None, "teacher_id": 1, "status": "approved",
+            "order": 1, "is_published": True, "created_at": str(now),
+            "updated_at": str(now)
+        }
+        main_module.module_repository.get_by_id = AsyncMock(return_value=mock_module)
 
         resp = client.get(
             "/api/modules/enrolled",
@@ -565,7 +554,6 @@ class TestModules:
         data = resp.json()
         assert data["success"] is True
         assert len(data["modules"]) == 1
-        db_cursor.fetchall.return_value = []
 
 
 # ═══════════════════════════════════════════════════════════════════

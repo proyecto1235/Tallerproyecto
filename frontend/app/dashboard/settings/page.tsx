@@ -119,7 +119,7 @@ export default function SettingsPage() {
       toast.error("No se pudo cargar el perfil.")
       setIsLoading(false)
     }
-  }, [user, isAuthLoading, form])
+  }, [user, isAuthLoading])
 
   async function onSubmit(data: z.infer<typeof profileFormSchema>) {
     setIsSaving(true)
@@ -140,6 +140,7 @@ export default function SettingsPage() {
       if (result.success) {
         setSavedProfile({
           id: savedProfile.id,
+          publicId: savedProfile.publicId,
           username: data.username,
           email: data.email,
           bio: data.bio || "",
@@ -151,9 +152,9 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error("Error updating profile:", error)
-      // Fallback: store locally and show success message
       setSavedProfile({
         id: savedProfile.id,
+        publicId: savedProfile.publicId,
         username: data.username,
         email: data.email,
         bio: data.bio || "",

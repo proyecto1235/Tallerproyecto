@@ -80,21 +80,31 @@ export function ChatWidget() {
     setMessages([INITIAL_BOT_MESSAGE])
   }, [])
 
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
   useEffect(() => {
     if (hasHydrated.current && messages.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => {
+        const trimmed = messages.length > 50 ? messages.slice(-50) : messages
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed))
+      }, 500)
     }
   }, [messages])
 
+  // Open/close behavior — runs only when isOpen toggles
   useEffect(() => {
-    if (isOpen) {
-      setUnread(0)
-      setConnectionError(false)
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-      setTimeout(() => inputRef.current?.focus(), 300)
-      checkServiceStatus()
-    }
-  }, [isOpen, messages])
+    if (!isOpen) return
+    setUnread(0)
+    setConnectionError(false)
+    setTimeout(() => inputRef.current?.focus(), 300)
+    checkServiceStatus()
+  }, [isOpen])
+
+  // Scroll on new messages only — runs when message count changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages.length])
 
   const checkServiceStatus = async () => {
     if (checkedStatus.current) return

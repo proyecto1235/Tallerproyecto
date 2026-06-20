@@ -14,10 +14,6 @@ from infrastructure.adapters.output.postgres.enrollment_repository_impl import E
 from infrastructure.adapters.output.postgres.teacher_repository_impl import TeacherRepositoryImpl
 from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
 from infrastructure.adapters.output.mongo.behavioral_repository import BehavioralRepository
-from application.services.ai_service_impl import AIServiceImpl
-from application.services.ai_recommender import RecommendationService
-from application.services.student_predictor import StudentPredictor
-from application.services.intelligent_tutor import IntelligentTutor
 from application.services.sandbox_service import SandboxService
 from application.services.llm_service import LLMService
 from application.services.embedding_service import EmbeddingService
@@ -49,10 +45,35 @@ teacher_repository = TeacherRepositoryImpl()
 event_repository = EventRepository()
 behavioral_repo = BehavioralRepository()
 
-# AI / ML services
-ai_service = AIServiceImpl()
-student_predictor = StudentPredictor()
-intelligent_tutor = IntelligentTutor(predictor=student_predictor)
+class _LazyAI:
+    """Lazy singleton that imports heavy ML packages only on first access"""
+    _instance = None
+    def __getattr__(self, name):
+        if self._instance is None:
+            from application.services.ai_service_impl import AIServiceImpl
+            self._instance = AIServiceImpl()
+        return getattr(self._instance, name)
+
+class _LazyMLOrchestrator:
+    _instance = None
+    def __getattr__(self, name):
+        if self._instance is None:
+            from application.services.ml.orchestrator import MLOrchestrator
+            self._instance = MLOrchestrator()
+        return getattr(self._instance, name)
+
+class _LazyIntelligentTutor:
+    _instance = None
+    def __getattr__(self, name):
+        if self._instance is None:
+            from application.services.intelligent_tutor import IntelligentTutor
+            self._instance = IntelligentTutor(orchestrator=ml_orchestrator)
+        return getattr(self._instance, name)
+
+# AI / ML services (lazy — ML packages imported only when first used)
+ai_service = _LazyAI()
+ml_orchestrator = _LazyMLOrchestrator()
+intelligent_tutor = _LazyIntelligentTutor()
 sandbox_service = SandboxService()
 
 # New architecture services
@@ -123,13 +144,13 @@ async def is_token_blacklisted(token: str) -> bool:
     try:
         r = await rate_limiter._get_redis()
         if r is None:
-            return True
+            return False
         key = _extract_jti_from_token(token)
         return await r.exists(f"token_blacklist:{key}")
     except Exception as e:
         from app.logging_config import logger
         logger.error(f"Redis error in is_token_blacklisted: {e}")
-        return True
+        return False
 
 
 async def verify_token(request: Request) -> TokenData:
@@ -152,19 +173,13 @@ async def verify_token(request: Request) -> TokenData:
 
 
 async def verify_teacher(token_data: TokenData = Depends(verify_token)) -> TokenData:
-    user = await user_repository.get_by_id(token_data.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.role not in [UserRole.TEACHER, UserRole.ADMIN]:
+    if token_data.role not in ["teacher", "admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requires teacher privileges")
     return token_data
 
 
 async def verify_admin(token_data: TokenData = Depends(verify_token)) -> TokenData:
-    user = await user_repository.get_by_id(token_data.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.role != UserRole.ADMIN:
+    if token_data.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requires admin privileges")
     return token_data
 

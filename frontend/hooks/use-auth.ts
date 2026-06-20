@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 
 export interface User {
   id: number
@@ -45,7 +45,7 @@ export function useAuth() {
     isAuthenticated: false,
   })
 
-  const checkSession = useCallback(async () => {
+  const checkSession = async () => {
     try {
       const res = await fetch(`${API_URL}/users/profile`, {
         method: "GET",
@@ -88,11 +88,9 @@ export function useAuth() {
         isAuthenticated: false,
       })
     }
-  }, [])
+  }
 
-  useEffect(() => {
-    checkSession()
-  }, [checkSession])
+  useEffect(() => { checkSession() }, [])
 
   const login = async (email: string, password: string) => {
     const res = await fetch(`${API_URL}/auth/login`, {

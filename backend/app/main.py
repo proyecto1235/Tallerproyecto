@@ -1,14 +1,10 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
-<<<<<<< HEAD
 from fastapi.responses import JSONResponse
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
-=======
-from contextlib import asynccontextmanager
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 import os
 import sys
 
@@ -17,8 +13,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import settings
 from config.database_init import initialize_database
 from infrastructure.adapters.output.postgres.connection import PostgresConnection
+from infrastructure.adapters.output.postgres.user_repository_impl import UserRepositoryImpl
+from infrastructure.adapters.output.postgres.module_repository_impl import ModuleRepositoryImpl
+from infrastructure.adapters.output.postgres.enrollment_repository_impl import EnrollmentRepositoryImpl
+from infrastructure.adapters.output.postgres.teacher_repository_impl import TeacherRepositoryImpl
 from infrastructure.adapters.output.mongo.event_repository_impl import EventRepository
-<<<<<<< HEAD
 from application.services.ai_service_impl import AIServiceImpl
 from application.services.intelligent_tutor import IntelligentTutor
 from application.services.sandbox_service import SandboxService
@@ -34,27 +33,20 @@ from application.useCases.get_recommendations import GetRecommendationsUseCase
 from application.useCases.enroll_student import EnrollStudentUseCase
 from application.useCases.teacher_dashboard import TeacherDashboardUseCase
 from application.useCases.generate_ai_alerts import GenerateAIAlertsUseCase
-from application.services.analytics.analytics_router import analytics_router
 from domain.entities.user import UserRole
 from pydantic import BaseModel
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-=======
+from app.schemas.auth import RegisterRequest, LoginRequest, ProfileUpdate, UserRoleUpdate
+from app.schemas.ai import ChatRequest, PublicChatRequest, RAGIndexRequest, RAGSearchRequest, AITutorAskRequest, ExerciseSuggestionRequest
+from app.schemas.classes import ClassCreate, ClassUpdate, ClassModuleCreate, ClassModuleUpdate, ClassExerciseCreate, ClassExerciseUpdate
+from app.schemas.exercises import ExecuteRequest, ExerciseSubmit
+from app.schemas.challenges import ChallengeCreate, ChallengeSubmit
+from app.schemas.modules import ModuleCreate, ModuleUpdate, ModuleComplete, LessonComplete
+from app.schemas.common import TokenData
 from app.exceptions import register_error_handlers
 from app.logging_config import logger
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
-# ---- Router Imports ----
-from infrastructure.adapters.input.auth_router import router as auth_router
-from infrastructure.adapters.input.users_router import router as users_router
-from infrastructure.adapters.input.modules_router import router as modules_router
-from infrastructure.adapters.input.exercises_router import router as exercises_router
-from infrastructure.adapters.input.challenges_router import router as challenges_router
-from infrastructure.adapters.input.classes_router import router as classes_router
-from infrastructure.adapters.input.ai_router import router as ai_router
-from infrastructure.adapters.input.analytics_router import router as analytics_router
-from infrastructure.adapters.input.dashboard_router import router as dashboard_router
-from infrastructure.adapters.input.admin_router import router as admin_router
+
 
 
 @asynccontextmanager
@@ -64,19 +56,17 @@ async def lifespan(app: FastAPI):
         cred_path = os.path.abspath(settings.google_credentials_path)
         if os.path.exists(cred_path):
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-<<<<<<< HEAD
-            print(f"[OK] Google credentials loaded from: {cred_path}")
-        else:
-            print(f"[WARN] Google credentials file not found at: {cred_path}")
-    
-    # Initialize database (create if needed, migrate tables, seed data)
-=======
             logger.info(f"Google credentials loaded from: {cred_path}")
         else:
             logger.warning(f"Google credentials file not found at: {cred_path}")
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
+
+    # Initialize database (create if needed, migrate tables, seed data)
     initialize_database()
     PostgresConnection.init_pool()
+
+    # Analytics router (lazy import — numpy loaded here, not at module level)
+    from application.services.analytics.analytics_router import analytics_router
+    app.include_router(analytics_router)
     yield
     logger.info("Shutting down Robolearn API...")
     PostgresConnection.close_pool()
@@ -96,22 +86,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-<<<<<<< HEAD
-# ============================================
-# Mount Routers
-# ============================================
+# ---- Mount Routers ----
+# analytics_router imported inside lifespan to defer numpy loading
 
-app.include_router(analytics_router)
-
-# ============================================
-# Utilities
-# ============================================
-=======
 AUDIT_PATHS = [
     "/api/auth/", "/api/admin/", "/api/users/profile",
     "/api/execute-code", "/api/exercises/submit",
 ]
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
 
 @app.middleware("http")
@@ -140,70 +121,22 @@ async def add_security_headers(request: Request, call_next):
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
     return response
 
-
-<<<<<<< HEAD
-async def verify_token_optional(request: Request) -> Optional[TokenData]:
-    """Verify JWT token from cookies — returns None if not authenticated"""
-    token = request.cookies.get("auth-token")
-    if not token:
-        return None
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        user_id: int = payload.get("user_id")
-        email: str = payload.get("email")
-        role: str = payload.get("role")
-        if user_id is None:
-            return None
-        return TokenData(
-            user_id=user_id, email=email, role=role,
-            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
-        )
-    except JWTError:
-        return None
+from app.dependencies import (
+    verify_token, verify_teacher, verify_admin, verify_token_optional, pwd_context, create_access_token,
+    user_repository, module_repository, enrollment_repository, teacher_repository, 
+    event_repository, behavioral_repo, ai_service, ml_orchestrator, intelligent_tutor, 
+    sandbox_service, ai_cache, rate_limiter, llm_service, embedding_service, rag_service,
+    ai_tutor_service, exercise_generator_service
+)
 
 # ============================================
 # Initialize Repositories
 # ============================================
-
-user_repository = UserRepositoryImpl()
-module_repository = ModuleRepositoryImpl()
-enrollment_repository = EnrollmentRepositoryImpl()
-teacher_repository = TeacherRepositoryImpl()
-event_repository = EventRepository()
-ai_service = AIServiceImpl()
-behavioral_repo = BehavioralRepository()
-from application.services.ml.orchestrator import MLOrchestrator
-ml_orchestrator = MLOrchestrator()
-intelligent_tutor = IntelligentTutor(orchestrator=ml_orchestrator)
-
-# New architecture services
-sandbox_service = SandboxService()
-ai_cache = AICache(redis_url=settings.redis_url)
-llm_service = LLMService(
-    ollama_url=settings.ollama_url,
-    model=settings.ollama_model,
-)
-embedding_service = EmbeddingService(llm_service=llm_service, cache=ai_cache)
-rag_service = RAGService(embedding_service=embedding_service, llm_service=llm_service)
-ai_tutor_service = AITutorService(llm_service=llm_service, rag_service=rag_service, cache=ai_cache)
-exercise_generator_service = ExerciseGeneratorService(llm_service=llm_service)
+# All repositories and services are initialized in app.dependencies
 
 # ============================================
 # Routes - Health
 # ============================================
-=======
-# ---- Include Routers ----
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(modules_router)
-app.include_router(exercises_router)
-app.include_router(challenges_router)
-app.include_router(classes_router)
-app.include_router(ai_router)
-app.include_router(analytics_router)
-app.include_router(dashboard_router)
-app.include_router(admin_router)
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
 # ---- Health ----
 @app.get("/", tags=["Health"])
@@ -211,7 +144,6 @@ async def root():
     return {"message": "Robolearn API running", "version": "1.0.0"}
 
 @app.get("/health", tags=["Health"])
-<<<<<<< HEAD
 async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
@@ -4101,10 +4033,6 @@ async def http_exception_handler(request, exc):
         status_code=exc.status_code,
         content={"error": exc.detail},
     )
-=======
-async def health_check():
-    return {"success": True, "status": "healthy"}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
 if __name__ == "__main__":
     import uvicorn

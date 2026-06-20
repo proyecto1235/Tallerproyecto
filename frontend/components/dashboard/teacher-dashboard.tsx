@@ -270,7 +270,7 @@ export function TeacherDashboard({ user }: TeacherDashboardProps) {
                   </span>
                   <Avatar className="h-8 w-8">
                     <AvatarFallback className="text-xs">
-                      {student.name.split(" ").map((n) => n[0]).join("")}
+                      {student.name.split(" ").map((n: string) => n[0]).join("")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1">

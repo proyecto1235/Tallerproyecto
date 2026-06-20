@@ -1,10 +1,14 @@
 import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
-import { ChatWidget } from '@/components/chat/chat-widget'
+import { Inter, Orbitron } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from 'sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { ChatWidgetLazy } from '@/components/chat/chat-widget-lazy'
 import './globals.css'
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+const orbitron = Orbitron({ subsets: ['latin'], variable: '--font-orbitron' })
 
 export const metadata: Metadata = {
   title: 'RoboLearn - Aprende Programación y Robótica',
@@ -27,13 +31,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning className={`${inter.variable} ${orbitron.variable}`}>
       <body className="font-sans antialiased min-h-screen bg-background text-foreground">
         <ThemeProvider>
           {children}
           <div className="crt-scanlines crt-flicker" />
           <div className="crt-vignette" />
-          <ChatWidget />
+          <ChatWidgetLazy />
           <Toaster
             position="bottom-right"
             richColors

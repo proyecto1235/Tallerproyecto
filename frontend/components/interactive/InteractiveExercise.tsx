@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import CodeMirror from '@uiw/react-codemirror'
+import { CodeEditor } from '@/components/code-editor'
 import { python } from '@codemirror/lang-python'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { Play, RotateCcw, Terminal } from 'lucide-react'
@@ -115,7 +115,7 @@ export function InteractiveExercise() {
             </div>
           </div>
           <div className="flex-1 min-h-[300px]">
-            <CodeMirror
+            <CodeEditor
               value={code}
               height="100%"
               minHeight="300px"

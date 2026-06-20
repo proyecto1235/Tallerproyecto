@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, ArrowLeft, Save, Plus, Trash, Code, Eye, Edit3, Hash } from "lucide-react"
 import { MarkdownContent } from "@/components/ui/markdown-content"
-import CodeMirror from '@uiw/react-codemirror'
+import { CodeEditor } from '@/components/code-editor'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { python } from '@codemirror/lang-python'
@@ -281,7 +281,7 @@ export default function ModuleEditPage() {
                         <Hash className="w-4 h-4 mr-1" /> Insertar ejercicio
                       </Button>
                     </div>
-                    <CodeMirror
+                    <CodeEditor
                       value={content}
                       height="500px"
                       theme={oneDark}
@@ -374,7 +374,7 @@ export default function ModuleEditPage() {
             <div className="space-y-2">
               <Label>Código inicial del ejercicio</Label>
               <div className="border rounded-md overflow-hidden">
-                <CodeMirror
+                <CodeEditor
                   value={editingExercise?.instructions || ""}
                   height="180px"
                   theme={oneDark}

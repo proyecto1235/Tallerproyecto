@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 
 from app.schemas.auth import ProfileUpdate
 from app.schemas.common import TokenData
+from infrastructure.adapters.output.postgres.connection import PostgresConnection
 from app.dependencies import (
     user_repository, event_repository, pwd_context, verify_token, verify_token_optional,
-    PostgresConnection,
 )
 from app.logging_config import logger
 

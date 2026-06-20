@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -56,6 +56,7 @@ export default function ClassesPage() {
     setIsLoading(false)
   }
 
+  const requestingRef = useRef<number | null>(null)
   const isEnrolled = (classId: number) => enrolledClasses.some(c => c.id === classId)
   const isPending = (classId: number) => pendingRequests.some(c => c.id === classId)
   const hasAction = (classId: number) => isEnrolled(classId) || isPending(classId)

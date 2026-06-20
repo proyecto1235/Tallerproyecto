@@ -207,7 +207,7 @@ export function AdminDashboard({ user }: AdminDashboardProps) {
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10">
                       <AvatarFallback>
-                        {request.name.split(" ").map((n) => n[0]).join("")}
+                        {request.name.split(" ").map((n: string) => n[0]).join("")}
                       </AvatarFallback>
                     </Avatar>
                     <div>

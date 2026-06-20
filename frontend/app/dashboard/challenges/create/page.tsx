@@ -74,7 +74,7 @@ export default function CreateChallengePage() {
     }
   }
 
-  const editorTheme = { "&": { backgroundColor: "#1e1e1e", color: "#d4d4d4" } }
+  const editorTheme: React.CSSProperties = { backgroundColor: "#1e1e1e", color: "#d4d4d4" }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-10">

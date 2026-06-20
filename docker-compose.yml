@@ -7,11 +7,7 @@ services:
     container_name: robolearn_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-<<<<<<< HEAD
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-robolearn_dev}
-=======
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
       POSTGRES_DB: ${POSTGRES_DB:-robolearn}
     ports:
       - "${POSTGRES_PORT_EXTERNAL:-127.0.0.1:5432}:5432"
@@ -37,15 +33,9 @@ services:
     image: mongo:7
     container_name: robolearn_mongo
     environment:
-<<<<<<< HEAD
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-robolearn_dev}
       MONGO_INITDB_DATABASE: ${MONGO_DB:-robolearn_metrics}
-=======
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DB:-robolearn_metrics}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
     ports:
       - "${MONGO_PORT_EXTERNAL:-127.0.0.1:27017}:27017"
     volumes:
@@ -111,7 +101,6 @@ services:
     env_file:
       - .env
     environment:
-<<<<<<< HEAD
       APP_NAME: Robolearn API
       DEBUG: "True"
       APP_ENV: development
@@ -128,24 +117,6 @@ services:
 
       MONGODB_URL: mongodb://mongo:27017
       MONGODB_DB: ${MONGO_DB:-robolearn_metrics}
-=======
-      APP_NAME: ${APP_NAME:-Robolearn API}
-      DEBUG: ${DEBUG:-false}
-      NODE_ENV: ${NODE_ENV:-production}
-
-      SECRET_KEY: ${SECRET_KEY}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-robolearn}
-
-      MONGODB_URL: mongodb://mongo:27017
-      MONGODB_DB: ${MONGODB_DB:-robolearn_metrics}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
 
       REDIS_URL: redis://redis:6379/0
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -155,15 +126,9 @@ services:
 
       DIALOGFLOW_PROJECT_ID: ${DIALOGFLOW_PROJECT_ID:-}
       DIALOGFLOW_AGENT_ID: ${DIALOGFLOW_AGENT_ID:-}
-<<<<<<< HEAD
       GOOGLE_CREDENTIALS_PATH: /app/robolearn-key.json
 
       CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173","http://localhost:8000"]'
-=======
-      GOOGLE_CREDENTIALS_PATH: ${GOOGLE_CREDENTIALS_PATH:-}
-
-      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
     ports:
       - "${BACKEND_PORT_EXTERNAL:-127.0.0.1:8000}:8000"
     depends_on:
@@ -175,13 +140,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-<<<<<<< HEAD
       - ./backend/robolearn-key.json:/app/robolearn-key.json
       - ./models:/app/models
       - /var/run/docker.sock:/var/run/docker.sock
-=======
-      - ${GOOGLE_CREDENTIALS_HOST_PATH:-./backend/robolearn-key.json}:${GOOGLE_CREDENTIALS_PATH:-/app/robolearn-key.json}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
     restart: always
     networks:
       - frontend_net
@@ -200,15 +161,10 @@ services:
     env_file:
       - .env
     environment:
-<<<<<<< HEAD
       NEXT_PUBLIC_API_URL: http://localhost:8000/api
       NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
       NEXT_PUBLIC_JWT_EXPIRATION_DAYS: 7
       JWT_SECRET: ${SECRET_KEY:-dev-secret-key-robolearn}
-=======
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
-      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
->>>>>>> bb8d11dac1c27f7d062405a9f94c17d9b8a3430c
     ports:
       - "${FRONTEND_PORT_EXTERNAL:-127.0.0.1:3000}:3000"
     depends_on:

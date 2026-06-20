@@ -18,18 +18,17 @@ _ml_repo = MLPredictionsRepository()
 
 
 def get_orchestrator() -> MLOrchestrator:
-    from app.main import ml_orchestrator
+    from app.dependencies import ml_orchestrator
     return ml_orchestrator
 
 
 async def _require_auth(request: Request):
-    from app.main import verify_token
+    from app.dependencies import verify_token
     return await verify_token(request)
 
 
 async def _require_teacher(request: Request):
-    from app.main import verify_token
-    from app.main import user_repository
+    from app.dependencies import verify_token, user_repository
     from domain.entities.user import UserRole
     token_data = await verify_token(request)
     user = await user_repository.get_by_id(token_data.user_id)
@@ -46,7 +45,7 @@ async def get_student_analytics(
     """Full student analytics: metrics + predictions + history + recommendations.
     Teachers/admins can view any student. Students can only view their own data."""
     from domain.entities.user import UserRole
-    from app.main import user_repository
+    from app.dependencies import user_repository
     user = await user_repository.get_by_id(token_data.user_id)
     is_teacher = user and user.role in (UserRole.TEACHER, UserRole.ADMIN)
     if not is_teacher and token_data.user_id != student_id:

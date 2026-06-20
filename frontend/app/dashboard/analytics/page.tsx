@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -30,6 +30,7 @@ export default function AnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [processing, setProcessing] = useState(false)
+  const pollCountRef = useRef(0)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -95,10 +96,11 @@ export default function AnalyticsPage() {
     fetchData()
   }, [])
 
-  // Poll while predictions are processing
+  // Poll while predictions are processing — max 12 cycles (2 min), counter via ref avoids re-render loops
   useEffect(() => {
-    if (!processing) return
-    const interval = setInterval(async () => {
+    if (!processing || pollCountRef.current >= 12) return
+
+    const timeout = setTimeout(async () => {
       try {
         const res = await fetch(`${API_URL}/analytics/dashboard?days=30`, { credentials: "include" })
         const json = await res.json()
@@ -107,13 +109,23 @@ export default function AnalyticsPage() {
           setData(json)
           setStudents(cp.students || [])
           setSummary(cp.summary || {})
-          if (cp.processing !== true) {
+          if (cp.processing === true) {
+            pollCountRef.current += 1
+          } else {
             setProcessing(false)
+            pollCountRef.current = 0
           }
+        } else {
+          setProcessing(false)
+          pollCountRef.current = 0
         }
-      } catch {}
+      } catch {
+        setProcessing(false)
+        pollCountRef.current = 0
+      }
     }, 10000)
-    return () => clearInterval(interval)
+
+    return () => clearTimeout(timeout)
   }, [processing])
 
   if (isLoading) {

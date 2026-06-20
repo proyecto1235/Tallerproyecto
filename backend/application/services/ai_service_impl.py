@@ -2,10 +2,6 @@ from typing import Dict, Any, List, Optional
 from domain.ports.ai_service import AIService
 from config.settings import settings
 import json
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import NearestNeighbors
-import joblib
 import os
 
 class AIServiceImpl(AIService):
@@ -19,11 +15,12 @@ class AIServiceImpl(AIService):
     def _load_ml_model(self):
         """Load or initialize Scikit-learn model"""
         import os
+        import joblib
+        from sklearn.neighbors import NearestNeighbors
         model_path = os.path.join(settings.ml_model_dir, "recommendation_model.pkl")
         if os.path.exists(model_path):
             self.ml_model = joblib.load(model_path)
         else:
-            # Initialize with default model
             self.ml_model = NearestNeighbors(n_neighbors=5, algorithm="ball_tree")
     
     async def get_recommendations(self, user_id: int, user_history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -206,9 +203,9 @@ class AIServiceImpl(AIService):
         """Train the recommendation model"""
         try:
             self.ml_model.fit(training_data)
-            # Save the model
             model_dir = settings.ml_model_dir
             os.makedirs(model_dir, exist_ok=True)
+            import joblib
             joblib.dump(self.ml_model, os.path.join(model_dir, "recommendation_model.pkl"))
         except Exception as e:
             print(f"Error training model: {e}")
