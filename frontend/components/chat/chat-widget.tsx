@@ -80,7 +80,7 @@ export function ChatWidget() {
     setMessages([INITIAL_BOT_MESSAGE])
   }, [])
 
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     if (hasHydrated.current && messages.length > 0) {
